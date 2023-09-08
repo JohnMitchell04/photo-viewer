@@ -3,23 +3,26 @@
 
 #include "Walnut/Image.h"
 
+#include "Image.h"
+#include "PNG.h"
+
 class ExampleLayer : public Walnut::Layer
 {
 public:
 	virtual void OnUIRender() override
 	{
-		ImGui::Begin("Hello");
-		ImGui::Button("Button");
+		ImGui::Begin("Control Panel");
+		if (ImGui::Button("Open")) {
+			ImageLibrary::PNG image("C:\\Users\\johnr\\source\\repos\\photo-viewer\\PhotoViewer\\test\\test2.png");
+		}
 		ImGui::End();
-
-		ImGui::ShowDemoWindow();
 	}
 };
 
 Walnut::Application* Walnut::CreateApplication(int argc, char** argv)
 {
 	Walnut::ApplicationSpecification spec;
-	spec.Name = "Walnut Example";
+	spec.Name = "Photo Viewer";
 
 	Walnut::Application* app = new Walnut::Application(spec);
 	app->PushLayer<ExampleLayer>();
