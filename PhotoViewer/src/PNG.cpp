@@ -1,6 +1,22 @@
 #include "PNG.h"
 
 namespace ImageLibrary {
+	void PNG::InitCRC() {
+		// Taken directly from the specification and cleaned slightly
+		for (uint32_t n = 0; n < 256; n++) {
+			uint32_t c = (uint32_t)n;
+			for (uint32_t k = 0; k < 8; k++) {
+				if (c & 1) {
+					c = 0xedb88320L ^ (c >> 1);
+				}
+				else {
+					c = c >> 1;
+				}
+			}
+			m_crcTable[n] = c;
+		}
+	}
+
 	void PNG::ReadFile() {
 		ReadRawData();
 		ParseSignature();
@@ -54,6 +70,9 @@ namespace ImageLibrary {
 			// Consume chunk length
 			m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
+			// Check CRC matches data
+			CheckCRC(length);
+
 			// Copy and consume chunk specifier
 			std::string chunkSpecifier(m_rawData.begin(), m_rawData.begin() + 4);
 			m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
@@ -89,9 +108,36 @@ namespace ImageLibrary {
 			case Utils::IHDR:
 				ParseIHDR();
 				break;
+			case Utils::IDAT:
+				ParseIDAT();
+				break;
 			}
 
 			chunksIndex++;
+		}
+	}
+
+	void PNG::CheckCRC(uint32_t length) {
+		// Taken directly from specification and cleaned slightly
+
+		// Get the CRC in the chunk
+		uint32_t chunkCRC = 0;
+		for (int i = 0; i < 4; i++) {
+			chunkCRC |= ((uint32_t)m_rawData[4 + length + i] << (8 * (3 - i)));
+		}
+
+		// Calculate the expected CRC
+		uint32_t c = 0xffffffffL;
+
+		for (uint32_t n = 0; n < length + 4; n++) {
+			c = m_crcTable[(c ^ m_rawData[n]) & 0xff] ^ (c >> 8);
+		}
+
+		uint32_t calculatedCRC = c ^ 0xffffffffL;
+
+		// Compare calculated and stored CRC
+		if (chunkCRC != calculatedCRC) {
+			throw new std::runtime_error("Chunk is invalid");
 		}
 	}
 
@@ -166,5 +212,9 @@ namespace ImageLibrary {
 
 		// Do not process images with private interlace methods
 		if (m_interlaceMethod != 0 && m_interlaceMethod != 1) { throw new std::runtime_error("Incompatible interlace method"); }
+	}
+
+	void PNG::ParseIDAT() {
+
 	}
 }

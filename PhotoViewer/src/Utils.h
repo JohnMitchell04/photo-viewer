@@ -15,6 +15,7 @@ namespace ImageLibrary {
 		enum PNGChunkIdentifier {
 			IHDR,
 			PLTE,
+			IDAT,
 			INVALID
 		};
 

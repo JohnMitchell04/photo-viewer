@@ -9,22 +9,27 @@
 #include <ctype.h>
 #include <tuple>
 #include <unordered_map>
+#include <array>
 
 namespace ImageLibrary {
 	class PNG : Image
 	{
 	public:
-		PNG(std::string filePath) : Image(filePath) { ReadFile(); };
+		PNG(std::string filePath) : Image(filePath) { InitCRC(); ReadFile(); };
 
 	private:
+		void InitCRC();
 		void ReadFile();
 
 		void ReadRawData();
 		void ParseSignature();
 		void ParseChunks();
+		void CheckCRC(uint32_t length);
 		void ParseIHDR();
+		void ParseIDAT();
 
 	private:
+		std::array<uint32_t, 256> m_crcTable;
 		uint8_t m_bitDepth;
 		uint8_t m_colourType;
 		uint8_t m_compressionMethod;

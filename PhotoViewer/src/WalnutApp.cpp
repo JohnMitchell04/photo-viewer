@@ -13,7 +13,7 @@ public:
 	{
 		ImGui::Begin("Control Panel");
 		if (ImGui::Button("Open")) {
-			ImageLibrary::PNG image("C:\\Users\\johnr\\source\\repos\\photo-viewer\\PhotoViewer\\test\\test2.png");
+			ImageLibrary::PNG image("C:\\Users\\johnr\\source\\repos\\photo-viewer\\PhotoViewer\\test\\TrueColourA.png");
 		}
 		ImGui::End();
 	}
