@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 
 namespace ImageLibrary {
 	namespace Utils {
@@ -12,16 +13,39 @@ namespace ImageLibrary {
 			PNG_SIGNATURE = 0xC7
 		};
 
+		// TODO: Decide which ancilliary chunks will be treated as unknown
 		enum PNGChunkIdentifier {
-			IHDR,
-			PLTE,
-			IDAT,
-			INVALID
+			IHDR = 100,
+			PLTE = 101,
+			IDAT = 102,
+			IEND = 103,
+			cHRM = 200,
+			cICP = 201,
+			gAMA = 202,
+			iCCP = 203,
+			mDCv = 204,
+			cLLi = 205,
+			sBIT = 206,
+			sRGB = 207,
+			bKGD = 208,
+			hIST = 209,
+			tRNS = 210,
+			eXIf = 211,
+			pHYs = 212,
+			sPLT = 213,
+			tIME = 214,
+			iTXt = 215,
+			tEXt = 216,
+			zTXt = 217,
+			UNKOWN = 0,
+			INVALID = -1
 		};
 
 		struct PNGChunk {
 			PNGChunkIdentifier identifier;
 			int position;
 		};
+
+		PNGChunkIdentifier StringToFormat(std::string string);
 	}
 }

@@ -8,7 +8,6 @@
 #include <iterator>
 #include <ctype.h>
 #include <tuple>
-#include <unordered_map>
 #include <array>
 
 namespace ImageLibrary {

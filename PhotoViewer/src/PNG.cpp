@@ -1,4 +1,5 @@
 #include "PNG.h"
+#include "Utils.h"
 
 namespace ImageLibrary {
 	void PNG::InitCRC() {
@@ -77,32 +78,16 @@ namespace ImageLibrary {
 			std::string chunkSpecifier(m_rawData.begin(), m_rawData.begin() + 4);
 			m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
-			// Check chunk has valid specifier
-			for (int i = 0; i < 4; i++) {
-				if (!isalpha(chunkSpecifier[i])) { throw new std::runtime_error("A chunk is invalid"); }
-			}
+			Utils::PNGChunkIdentifier chunkSpecifierE = Utils::StringToFormat(chunkSpecifier);
 
-			// If chunk is private ignore
-			if (!isupper(chunkSpecifier[1])) { continue; }
+			// If chunk is unknown skip the chunk
+			if (chunkSpecifierE == Utils::UNKOWN) { continue; }
 
-			// If chunk isn't critical ignore for now
-			// TODO: Deal with ancilliary chunks
-			if (!isupper(chunkSpecifier[0])) { continue; }
-
-			// Check 3rd bit is valid
-			if (!isupper(chunkSpecifier[2])) { throw new std::runtime_error("A chunk is invalid"); }
+			// If chunk is invalid exit
+			if (chunkSpecifierE == Utils::INVALID) { throw new std::runtime_error("Ecnountered chunk is invalid"); }
 
 			// Ensure the correct chunk is encountered first
 			if (chunksIndex == 0 && chunkSpecifier != "IHDR") { throw new std::runtime_error("Chunk order is invalid"); }
-
-			// Convert string specifier to enum
-			std::unordered_map<std::string, Utils::PNGChunkIdentifier> table{ {"IHDR", Utils::IHDR}, {"PLTE", Utils::PLTE} };
-			auto it = table.find(chunkSpecifier);
-			Utils::PNGChunkIdentifier chunkSpecifierE = Utils::INVALID;
-
-			if (it != table.end()) {
-				chunkSpecifierE = it->second;
-			}
 
 			switch (chunkSpecifierE) {
 			case Utils::IHDR:
@@ -120,7 +105,7 @@ namespace ImageLibrary {
 	void PNG::CheckCRC(uint32_t length) {
 		// Taken directly from specification and cleaned slightly
 
-		// Get the CRC in the chunk
+		// Get the CRC in the chunk remembering it is big endian
 		uint32_t chunkCRC = 0;
 		for (int i = 0; i < 4; i++) {
 			chunkCRC |= ((uint32_t)m_rawData[4 + length + i] << (8 * (3 - i)));
