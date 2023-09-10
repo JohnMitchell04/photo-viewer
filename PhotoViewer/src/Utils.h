@@ -6,8 +6,8 @@
 namespace ImageLibrary {
 	namespace Utils {
 		// The max PNG size would be far too large for this application to handle so create an arbitrary limit
-		constexpr uint32_t PNG_SPEC_MAX_DIMENSION = 2147483647;
-		constexpr uint32_t PNG_APP_MAX_DIMENSION = 16384;
+		inline constexpr uint32_t PNG_SPEC_MAX_DIMENSION = 2147483647;
+		inline constexpr uint32_t PNG_APP_MAX_DIMENSION = 16384;
 
 		enum FormatSignatures {
 			PNG_SIGNATURE = 0xC7
@@ -47,5 +47,16 @@ namespace ImageLibrary {
 		};
 
 		PNGChunkIdentifier StringToFormat(std::string string);
+
+		template <typename T>
+		concept IntegerType = std::is_integral<T>::value && !std::same_as<T, bool>;
+
+		template <IntegerType T>
+		void ExtractBigEndian(T& dest, std::vector<uint8_t>& src, int bytes) {
+			dest = 0;
+			for (int i = 0; i < bytes; i++) {
+				dest |= ((T)src[i] << (8 * (bytes - 1 - i)));
+			}
+		}
 	}
 }

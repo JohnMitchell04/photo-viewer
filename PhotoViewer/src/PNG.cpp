@@ -63,10 +63,8 @@ namespace ImageLibrary {
 
 		while (!reachedIEND) {
 			// Get chunk length remembering it is big endian
-			uint32_t length = 0;
-			for (int i = 0; i < 4; i++) {
-				length |= ((uint32_t)m_rawData[i] << (8 * (3 - i)));
-			}
+			uint32_t length;
+			Utils::ExtractBigEndian(length, m_rawData, 4);
 
 			// Consume chunk length
 			m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
@@ -98,6 +96,8 @@ namespace ImageLibrary {
 				break;
 			}
 
+			// Add encountered chunk to list
+			encounteredChunks.push_back(Utils::PNGChunk{ .identifier = chunkSpecifierE, .position = chunksIndex });
 			chunksIndex++;
 		}
 	}
@@ -106,10 +106,8 @@ namespace ImageLibrary {
 		// Taken directly from specification and cleaned slightly
 
 		// Get the CRC in the chunk remembering it is big endian
-		uint32_t chunkCRC = 0;
-		for (int i = 0; i < 4; i++) {
-			chunkCRC |= ((uint32_t)m_rawData[4 + length + i] << (8 * (3 - i)));
-		}
+		uint32_t chunkCRC;
+		Utils::ExtractBigEndian(chunkCRC, m_rawData, 4);
 
 		// Calculate the expected CRC
 		uint32_t c = 0xffffffffL;
@@ -127,21 +125,12 @@ namespace ImageLibrary {
 	}
 
 	void PNG::ParseIHDR() {
-		// Get width remembering it is big endian
-		for (int i = 0; i < 4; i++) {
-			m_width |= ((uint32_t)m_rawData[i] << (8 * (3 - i)));
-		}
-
-		// Consume width
+		// Consume width remembering it is big endian
+		Utils::ExtractBigEndian(m_width, m_rawData, 4);
 		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
-		// Get height remembering it is big endian
-		uint32_t length = 0;
-		for (int i = 0; i < 4; i++) {
-			m_height |= ((uint32_t)m_rawData[i] << (8 * (3 - i)));
-		}
-
-		// Consume height
+		// Consume height remembering it is big endian
+		Utils::ExtractBigEndian(m_height, m_rawData, 4);
 		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
 		// Perform checks on dimensions
@@ -158,7 +147,8 @@ namespace ImageLibrary {
 		m_filterMethod = m_rawData[3];
 		m_interlaceMethod = m_rawData[4];
 
-		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 5);
+		// Consume additional information and CRC
+		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 9);
 
 		// Check image info
 		switch (m_colourType) {
