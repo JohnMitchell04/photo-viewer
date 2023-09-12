@@ -52,7 +52,7 @@ namespace ImageLibrary {
 		concept IntegerType = std::is_integral<T>::value && !std::same_as<T, bool>;
 
 		template <IntegerType T>
-		void ExtractBigEndian(T& dest, std::vector<uint8_t>& src, int bytes) {
+		void ExtractBigEndian(T& dest, uint8_t* src, int bytes) {
 			dest = 0;
 			for (int i = 0; i < bytes; i++) {
 				dest |= ((T)src[i] << (8 * (bytes - 1 - i)));

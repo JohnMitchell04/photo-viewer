@@ -1,3 +1,5 @@
+#include "../vendor/zlib/zlib.h"
+
 #include "PNG.h"
 #include "Utils.h"
 
@@ -59,15 +61,17 @@ namespace ImageLibrary {
 	void PNG::ParseChunks() {
 		std::vector<Utils::PNGChunk> encounteredChunks;
 		bool reachedIEND = false;
+		bool encounteredIDAT = false;
 		int chunksIndex = 0;
 
 		while (!reachedIEND) {
-			// Get chunk length remembering it is big endian
+			// Consume chunk length remembering it is big endian
 			uint32_t length;
-			Utils::ExtractBigEndian(length, m_rawData, 4);
-
-			// Consume chunk length
+			Utils::ExtractBigEndian(length, m_rawData.data(), 4);
 			m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
+
+			// Check length is within standard
+			if (length > (INT_MAX - 1)) { throw new std::runtime_error("Invalid chunk length"); }
 
 			// Check CRC matches data
 			CheckCRC(length);
@@ -82,17 +86,29 @@ namespace ImageLibrary {
 			if (chunkSpecifierE == Utils::UNKOWN) { continue; }
 
 			// If chunk is invalid exit
-			if (chunkSpecifierE == Utils::INVALID) { throw new std::runtime_error("Ecnountered chunk is invalid"); }
+			if (chunkSpecifierE == Utils::INVALID) { throw new std::runtime_error("Encountered chunk is invalid"); }
 
 			// Ensure the correct chunk is encountered first
 			if (chunksIndex == 0 && chunkSpecifier != "IHDR") { throw new std::runtime_error("Chunk order is invalid"); }
+
+			// Check IDAT chunks are consecutive
+			if (encounteredIDAT && chunkSpecifierE == Utils::IDAT) {
+				if (encounteredChunks[encounteredChunks.size() - 1].identifier != Utils::IDAT) { throw new std::runtime_error("Chunk order is invalid"); }
+			}
 
 			switch (chunkSpecifierE) {
 			case Utils::IHDR:
 				ParseIHDR();
 				break;
 			case Utils::IDAT:
-				ParseIDAT();
+				// Consume IDAT data into compressed data
+				encounteredIDAT = true;
+				std::copy(m_rawData.begin(), m_rawData.begin() + length, std::back_inserter(m_compressedData));
+				m_rawData.erase(m_rawData.begin(), m_rawData.begin() + length + 4);
+				break;
+			case Utils::IEND:
+				reachedIEND = true;
+				m_rawData.clear();
 				break;
 			}
 
@@ -100,6 +116,9 @@ namespace ImageLibrary {
 			encounteredChunks.push_back(Utils::PNGChunk{ .identifier = chunkSpecifierE, .position = chunksIndex });
 			chunksIndex++;
 		}
+
+		// Once end has been reached, process the image data
+		int test = 0;
 	}
 
 	void PNG::CheckCRC(uint32_t length) {
@@ -107,7 +126,7 @@ namespace ImageLibrary {
 
 		// Get the CRC in the chunk remembering it is big endian
 		uint32_t chunkCRC;
-		Utils::ExtractBigEndian(chunkCRC, m_rawData, 4);
+		Utils::ExtractBigEndian(chunkCRC, m_rawData.data() + 4 + length, 4);
 
 		// Calculate the expected CRC
 		uint32_t c = 0xffffffffL;
@@ -126,11 +145,11 @@ namespace ImageLibrary {
 
 	void PNG::ParseIHDR() {
 		// Consume width remembering it is big endian
-		Utils::ExtractBigEndian(m_width, m_rawData, 4);
+		Utils::ExtractBigEndian(m_width, m_rawData.data(), 4);
 		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
 		// Consume height remembering it is big endian
-		Utils::ExtractBigEndian(m_height, m_rawData, 4);
+		Utils::ExtractBigEndian(m_height, m_rawData.data(), 4);
 		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
 		// Perform checks on dimensions
@@ -187,9 +206,5 @@ namespace ImageLibrary {
 
 		// Do not process images with private interlace methods
 		if (m_interlaceMethod != 0 && m_interlaceMethod != 1) { throw new std::runtime_error("Incompatible interlace method"); }
-	}
-
-	void PNG::ParseIDAT() {
-
 	}
 }
