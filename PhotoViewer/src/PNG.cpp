@@ -25,6 +25,7 @@ namespace ImageLibrary {
 		ParseSignature();
 		ParseChunks();
 		DecompressData();
+		UnfilterData();
 	}
 
 	void PNG::ReadRawData() {
@@ -96,9 +97,10 @@ namespace ImageLibrary {
 
 			// Check IDAT chunks are consecutive
 			if (encounteredIDAT && chunkSpecifierE == Utils::IDAT) {
-				if (encounteredChunks[encounteredChunks.size() - 1].identifier != Utils::IDAT) { throw new std::runtime_error("Chunk order is invalid"); }
+				if (encounteredChunks.back().identifier != Utils::IDAT) { throw new std::runtime_error("Chunk order is invalid"); }
 			}
 
+			// TODO: Deal with PLTE chunk
 			switch (chunkSpecifierE) {
 			case Utils::IHDR:
 				ParseIHDR();
@@ -118,7 +120,7 @@ namespace ImageLibrary {
 			// Add encountered chunk to list
 			encounteredChunks.push_back(Utils::PNGChunk{ .identifier = chunkSpecifierE, .position = chunksIndex });
 			chunksIndex++;
-		} while (encounteredChunks[encounteredChunks.size() - 1].identifier != Utils::IEND);
+		} while (encounteredChunks.back().identifier != Utils::IEND);
 	}
 
 	void PNG::CheckCRC(uint32_t length) {
@@ -246,5 +248,58 @@ namespace ImageLibrary {
 		inflateEnd(&infStream);
 
 		m_compressedData.clear();
+	}
+
+	void PNG::UnfilterData() {
+		auto getNBytes = [&]() -> int { 
+			int nSamples = 1;
+			if (nSamples % 2 == 0) {
+				m_colourType -= 2;
+				m_colourType > 0 ? nSamples += 2 : nSamples += 3;
+			}
+			return m_bitDepth * nSamples;
+		};
+
+		// Iterate through each scanline and unfliter appropriately
+		for (uint32_t y = 0; y < m_height; y++) {
+			// Get scanline filter type
+			uint8_t filterType = m_filteredData[0];
+
+			// Consume byte
+			m_filteredData.erase(m_filteredData.begin());
+
+			for (uint32_t x = 0; x < m_width; x++) {
+				uint8_t currentByte;
+
+				switch (filterType) {
+				// None
+				case 0:
+					currentByte = m_filteredData[0];
+					break;
+				// Sub
+				case 1:
+					currentByte = m_filteredData[0] + (m_bitDepth < 8 ? m_interlacedData.back() : m_interlacedData[m_interlacedData.size() - 1 - ((m_bitDepth / 8) * getNBytes())]);
+					break;
+				// Up
+				case 2:
+					// TODO: Implement
+					break;
+				// Average
+				case 3:
+					// TODO: Implement
+					break;
+				// Paeth
+				case 4:
+					// TODO: Implement
+					break;
+				}
+
+				// Add reconstructed byte to output
+				m_interlacedData.push_back(currentByte);
+
+				// Consume byte
+				m_filteredData.erase(m_filteredData.begin());
+			}
+		}
 	}
 }
