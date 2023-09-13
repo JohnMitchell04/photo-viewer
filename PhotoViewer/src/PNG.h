@@ -25,6 +25,7 @@ namespace ImageLibrary {
 		void ParseChunks();
 		void CheckCRC(uint32_t length);
 		void ParseIHDR();
+		void DecompressData();
 
 	private:
 		std::array<uint32_t, 256> m_crcTable;
@@ -34,5 +35,6 @@ namespace ImageLibrary {
 		uint8_t m_filterMethod;
 		uint8_t m_interlaceMethod;
 		std::vector<uint8_t> m_compressedData;
+		std::vector<uint8_t> m_filteredData;
 	};
 }

@@ -24,6 +24,7 @@ namespace ImageLibrary {
 		ReadRawData();
 		ParseSignature();
 		ParseChunks();
+		DecompressData();
 	}
 
 	void PNG::ReadRawData() {
@@ -60,11 +61,10 @@ namespace ImageLibrary {
 
 	void PNG::ParseChunks() {
 		std::vector<Utils::PNGChunk> encounteredChunks;
-		bool reachedIEND = false;
 		bool encounteredIDAT = false;
 		int chunksIndex = 0;
 
-		while (!reachedIEND) {
+		do {
 			// Consume chunk length remembering it is big endian
 			uint32_t length;
 			Utils::ExtractBigEndian(length, m_rawData.data(), 4);
@@ -83,7 +83,10 @@ namespace ImageLibrary {
 			Utils::PNGChunkIdentifier chunkSpecifierE = Utils::StringToFormat(chunkSpecifier);
 
 			// If chunk is unknown skip the chunk
-			if (chunkSpecifierE == Utils::UNKOWN) { continue; }
+			if (chunkSpecifierE == Utils::UNKOWN) {
+				m_rawData.erase(m_rawData.begin(), m_rawData.begin() + length + 4);
+				continue;
+			}
 
 			// If chunk is invalid exit
 			if (chunkSpecifierE == Utils::INVALID) { throw new std::runtime_error("Encountered chunk is invalid"); }
@@ -107,7 +110,7 @@ namespace ImageLibrary {
 				m_rawData.erase(m_rawData.begin(), m_rawData.begin() + length + 4);
 				break;
 			case Utils::IEND:
-				reachedIEND = true;
+				// TODO: Ensure nothing follows the IEND chunk
 				m_rawData.clear();
 				break;
 			}
@@ -115,10 +118,7 @@ namespace ImageLibrary {
 			// Add encountered chunk to list
 			encounteredChunks.push_back(Utils::PNGChunk{ .identifier = chunkSpecifierE, .position = chunksIndex });
 			chunksIndex++;
-		}
-
-		// Once end has been reached, process the image data
-		int test = 0;
+		} while (encounteredChunks[encounteredChunks.size() - 1].identifier != Utils::IEND);
 	}
 
 	void PNG::CheckCRC(uint32_t length) {
@@ -206,5 +206,45 @@ namespace ImageLibrary {
 
 		// Do not process images with private interlace methods
 		if (m_interlaceMethod != 0 && m_interlaceMethod != 1) { throw new std::runtime_error("Incompatible interlace method"); }
+	}
+
+	void PNG::DecompressData() {
+		// Decompress IDAT data
+		int err;
+		z_stream infStream;
+		infStream.zalloc = Z_NULL;
+		infStream.zfree = Z_NULL;
+		infStream.opaque = Z_NULL;
+		infStream.next_in = m_compressedData.data();
+		infStream.avail_in = m_compressedData.size();
+
+		// Initialise the infaltion
+		err = inflateInit(&infStream);
+		if (err != Z_OK) {
+			throw new std::runtime_error("Decompression of data failed");
+		}
+
+		// Run inflate until all data has been decompressed
+		do {
+			// Arbitrary size to process
+			std::vector<uint8_t> tempOutput;
+			tempOutput.resize(65536);
+			infStream.next_out = tempOutput.data();
+			infStream.avail_out = tempOutput.size();
+
+			// Perform decompression
+			err = inflate(&infStream, Z_SYNC_FLUSH);
+			if (!(err == Z_OK || err == Z_STREAM_END)) {
+				inflateEnd(&infStream);
+				throw new std::runtime_error("Decompression of data failed");
+			}
+
+			// Copy decompressed data chunk
+			std::copy(tempOutput.begin(), tempOutput.begin() + (tempOutput.size() - infStream.avail_out), std::back_inserter(m_filteredData));
+		} while (err != Z_STREAM_END);
+
+		inflateEnd(&infStream);
+
+		m_compressedData.clear();
 	}
 }
