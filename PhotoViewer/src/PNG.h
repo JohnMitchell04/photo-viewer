@@ -1,7 +1,5 @@
 #pragma once
 
-#include "Image.h"
-
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -9,6 +7,8 @@
 #include <ctype.h>
 #include <tuple>
 #include <array>
+
+#include "Image.h"
 
 namespace ImageLibrary {
 	class PNG : Image
@@ -28,7 +28,7 @@ namespace ImageLibrary {
 		std::vector<uint8_t> DecompressData();
 		std::vector<uint8_t> UnfilterData(std::vector<uint8_t>& input);
 		std::vector<uint8_t> DeinterlaceData(std::vector<uint8_t>& input);
-		std::vector<std::vector<Utils::Pixel>> ParsePixels(std::vector<uint8_t>& input);
+		void ParsePixels(std::vector<uint8_t>& input);
 
 	private:
 		std::array<uint32_t, 256> m_crcTable;
@@ -37,6 +37,7 @@ namespace ImageLibrary {
 		uint8_t m_compressionMethod;
 		uint8_t m_filterMethod;
 		uint8_t m_interlaceMethod;
+		uint8_t m_nBytesPerPixel;
 		std::vector<uint8_t> m_compressedData;
 	};
 }

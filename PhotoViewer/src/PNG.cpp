@@ -76,7 +76,7 @@ namespace ImageLibrary {
 	}
 
 	void PNG::ParseChunks() {
-		std::vector<Utils::PNGChunk> encounteredChunks;
+		std::vector<Utils::PNG::Chunk> encounteredChunks;
 		bool encounteredIDAT = false;
 		int chunksIndex = 0;
 
@@ -96,46 +96,46 @@ namespace ImageLibrary {
 			std::string chunkSpecifier(m_rawData.begin(), m_rawData.begin() + 4);
 			m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
-			Utils::PNGChunkIdentifier chunkSpecifierE = Utils::StringToFormat(chunkSpecifier);
+			Utils::PNG::ChunkIdentifier chunkSpecifierE = Utils::PNG::StringToFormat(chunkSpecifier);
 
 			// If chunk is unknown skip the chunk
-			if (chunkSpecifierE == Utils::UNKOWN) {
+			if (chunkSpecifierE == Utils::PNG::UNKOWN) {
 				m_rawData.erase(m_rawData.begin(), m_rawData.begin() + length + 4);
 				continue;
 			}
 
 			// If chunk is invalid exit
-			if (chunkSpecifierE == Utils::INVALID) { throw new std::runtime_error("Encountered chunk is invalid"); }
+			if (chunkSpecifierE == Utils::PNG::INVALID) { throw new std::runtime_error("Encountered chunk is invalid"); }
 
 			// Ensure the correct chunk is encountered first
 			if (chunksIndex == 0 && chunkSpecifier != "IHDR") { throw new std::runtime_error("Chunk order is invalid"); }
 
 			// Check IDAT chunks are consecutive
-			if (encounteredIDAT && chunkSpecifierE == Utils::IDAT) {
-				if (encounteredChunks.back().identifier != Utils::IDAT) { throw new std::runtime_error("Chunk order is invalid"); }
+			if (encounteredIDAT && chunkSpecifierE == Utils::PNG::IDAT) {
+				if (encounteredChunks.back().identifier != Utils::PNG::IDAT) { throw new std::runtime_error("Chunk order is invalid"); }
 			}
 
 			// TODO: Deal with PLTE chunk
 			switch (chunkSpecifierE) {
-			case Utils::IHDR:
+			case Utils::PNG::IHDR:
 				ParseIHDR();
 				break;
-			case Utils::IDAT:
+			case Utils::PNG::IDAT:
 				// Consume IDAT data into compressed data
 				encounteredIDAT = true;
 				std::copy(m_rawData.begin(), m_rawData.begin() + length, std::back_inserter(m_compressedData));
 				m_rawData.erase(m_rawData.begin(), m_rawData.begin() + length + 4);
 				break;
-			case Utils::IEND:
+			case Utils::PNG::IEND:
 				// TODO: Ensure nothing follows the IEND chunk
 				m_rawData.clear();
 				break;
 			}
 
 			// Add encountered chunk to list
-			encounteredChunks.push_back(Utils::PNGChunk{ .identifier = chunkSpecifierE, .position = chunksIndex });
+			encounteredChunks.push_back(Utils::PNG::Chunk{ .identifier = chunkSpecifierE, .position = chunksIndex });
 			chunksIndex++;
-		} while (encounteredChunks.back().identifier != Utils::IEND);
+		} while (encounteredChunks.back().identifier != Utils::PNG::IEND);
 	}
 
 	void PNG::CheckCRC(uint32_t length) {
@@ -223,6 +223,25 @@ namespace ImageLibrary {
 
 		// Do not process images with private interlace methods
 		if (m_interlaceMethod != 0 && m_interlaceMethod != 1) { throw new std::runtime_error("Incompatible interlace method"); }
+
+		// TODO: Figure out how bit depth less than 8 works
+		switch (m_colourType) {
+		case 0:
+			// TODO: Implement
+			break;
+		case 2:
+			m_nBytesPerPixel = 3 * (m_bitDepth / 8.0);
+			break;
+		case 3:
+			// TODO Implement
+			break;
+		case 4:
+			// TODO: Implement
+			break;
+		case 6:
+			m_nBytesPerPixel = 4 * (m_bitDepth / 8.0);
+			break;
+		}
 	}
 
 	std::vector<uint8_t> PNG::DecompressData() {
@@ -230,7 +249,7 @@ namespace ImageLibrary {
 
 		// Decompress IDAT data
 		int err;
-		z_stream infStream;
+		z_stream infStream{};
 		infStream.zalloc = Z_NULL;
 		infStream.zfree = Z_NULL;
 		infStream.opaque = Z_NULL;
@@ -268,16 +287,8 @@ namespace ImageLibrary {
 		return output;
 	}
 
+	// TODO: This is ugly, clean up
 	std::vector<uint8_t> PNG::UnfilterData(std::vector<uint8_t>& input) {
-		auto getNBytes = [&]() -> int { 
-			int nSamples = 1;
-			if (nSamples % 2 == 0) {
-				m_colourType -= 2;
-				m_colourType > 0 ? nSamples += 2 : nSamples += 3;
-			}
-			return m_bitDepth * nSamples;
-		};
-
 		std::vector<uint8_t> output;
 
 		// Iterate through each scanline and unfliter appropriately
@@ -289,40 +300,43 @@ namespace ImageLibrary {
 			input.erase(input.begin());
 
 			for (uint32_t x = 0; x < m_width; x++) {
-				uint8_t currentByte;
+				for (uint8_t i = 0; i < m_nBytesPerPixel; i++) {
+					uint8_t currentByte;
 
-				switch (filterType) {
-				// None
-				case 0:
-					currentByte = input[0];
-					break;
-				// Sub
-				case 1:
-					currentByte = input[0] + (m_bitDepth < 8 ? input.back() : input[input.size() - 1 - ((m_bitDepth / 8) * getNBytes())]);
-					break;
-				// Up
-				case 2:
-					// TODO: Implement
-					break;
-				// Average
-				case 3:
-					// TODO: Implement
-					break;
-				// Paeth
-				case 4:
-					// TODO: Implement
-					break;
+					switch (filterType) {
+						// None
+					case 0:
+						currentByte = input[0];
+						break;
+						// Sub
+					case 1:
+						// Can't get preceding byte if first pixel
+						currentByte = input[0] + (x == 0 ? 0 : output[output.size() - m_nBytesPerPixel]);
+						break;
+						// Up
+					case 2:
+						// TODO: Implement
+						break;
+						// Average
+					case 3:
+						// TODO: Implement
+						break;
+						// Paeth
+					case 4:
+						// TODO: Implement
+						break;
+					}
+
+					// Add reconstructed byte to output
+					output.push_back(currentByte);
+
+					// Consume byte
+					input.erase(input.begin());
 				}
-
-				// Add reconstructed byte to output
-				output.push_back(currentByte);
-
-				// Consume byte
-				input.erase(input.begin());
 			}
 		}
 
-		return input;
+		return output;
 	}
 
 	std::vector<uint8_t> PNG::DeinterlaceData(std::vector<uint8_t>& input) {
@@ -331,5 +345,38 @@ namespace ImageLibrary {
 
 		// TODO: Implement Adam7 deinterlacing
 		return input;
+	}
+
+	void PNG::ParsePixels(std::vector<uint8_t>& input) {
+		Utils::PixelFormat format = Utils::INVALID;
+		// Select pixel format
+		switch (m_colourType) {
+		case 0:
+			// TODO: Implement
+			break;
+		case 2:
+			// TODO: Implement
+			break;
+		case 3:
+			// TODO Implement
+			break;
+		case 4:
+			// TODO: Implement
+			break;
+		case 6:
+			format = (m_bitDepth == 8 ? Utils::RGBA8 : Utils::RGBA16);
+			break;
+		}
+
+		// Consume input to create image data
+		std::vector<std::vector<uint8_t>> data(m_height, std::vector<uint8_t>());
+		for (uint32_t y = 0; y < m_height; y++) {
+			std::copy(input.begin() + y * m_width * m_nBytesPerPixel, input.begin() + (y + 1) * m_width * m_nBytesPerPixel, std::back_inserter(data[y]));
+		}
+
+		input.clear();
+
+		m_pixelData.SetFormat(format);
+		m_pixelData.SetPixelData(data);
 	}
 }
