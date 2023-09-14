@@ -21,11 +21,26 @@ namespace ImageLibrary {
 	}
 
 	void PNG::ReadFile() {
+		// Read raw data from file
 		ReadRawData();
+
+		// Get and check the PNG signature
 		ParseSignature();
+
+		// Pase PNG chunks from the data
 		ParseChunks();
-		DecompressData();
-		UnfilterData();
+
+		// Decompress the IDAT image data
+		std::vector<uint8_t> filteredData = DecompressData();
+
+		// Unfilter the IDAT image data
+		std::vector<uint8_t> interlacedData = UnfilterData(filteredData);
+
+		// Deinterlace IDAT image data if interlacing was used
+		std::vector<uint8_t> pixelData = DeinterlaceData(interlacedData);
+
+		// Parse pixels
+		ParsePixels(interlacedData);
 	}
 
 	void PNG::ReadRawData() {
@@ -210,7 +225,9 @@ namespace ImageLibrary {
 		if (m_interlaceMethod != 0 && m_interlaceMethod != 1) { throw new std::runtime_error("Incompatible interlace method"); }
 	}
 
-	void PNG::DecompressData() {
+	std::vector<uint8_t> PNG::DecompressData() {
+		std::vector<uint8_t> output;
+
 		// Decompress IDAT data
 		int err;
 		z_stream infStream;
@@ -242,15 +259,16 @@ namespace ImageLibrary {
 			}
 
 			// Copy decompressed data chunk
-			std::copy(tempOutput.begin(), tempOutput.begin() + (tempOutput.size() - infStream.avail_out), std::back_inserter(m_filteredData));
+			std::copy(tempOutput.begin(), tempOutput.begin() + (tempOutput.size() - infStream.avail_out), std::back_inserter(output));
 		} while (err != Z_STREAM_END);
 
 		inflateEnd(&infStream);
 
 		m_compressedData.clear();
+		return output;
 	}
 
-	void PNG::UnfilterData() {
+	std::vector<uint8_t> PNG::UnfilterData(std::vector<uint8_t>& input) {
 		auto getNBytes = [&]() -> int { 
 			int nSamples = 1;
 			if (nSamples % 2 == 0) {
@@ -260,13 +278,15 @@ namespace ImageLibrary {
 			return m_bitDepth * nSamples;
 		};
 
+		std::vector<uint8_t> output;
+
 		// Iterate through each scanline and unfliter appropriately
 		for (uint32_t y = 0; y < m_height; y++) {
 			// Get scanline filter type
-			uint8_t filterType = m_filteredData[0];
+			uint8_t filterType = input[0];
 
 			// Consume byte
-			m_filteredData.erase(m_filteredData.begin());
+			input.erase(input.begin());
 
 			for (uint32_t x = 0; x < m_width; x++) {
 				uint8_t currentByte;
@@ -274,11 +294,11 @@ namespace ImageLibrary {
 				switch (filterType) {
 				// None
 				case 0:
-					currentByte = m_filteredData[0];
+					currentByte = input[0];
 					break;
 				// Sub
 				case 1:
-					currentByte = m_filteredData[0] + (m_bitDepth < 8 ? m_interlacedData.back() : m_interlacedData[m_interlacedData.size() - 1 - ((m_bitDepth / 8) * getNBytes())]);
+					currentByte = input[0] + (m_bitDepth < 8 ? input.back() : input[input.size() - 1 - ((m_bitDepth / 8) * getNBytes())]);
 					break;
 				// Up
 				case 2:
@@ -295,11 +315,21 @@ namespace ImageLibrary {
 				}
 
 				// Add reconstructed byte to output
-				m_interlacedData.push_back(currentByte);
+				output.push_back(currentByte);
 
 				// Consume byte
-				m_filteredData.erase(m_filteredData.begin());
+				input.erase(input.begin());
 			}
 		}
+
+		return input;
+	}
+
+	std::vector<uint8_t> PNG::DeinterlaceData(std::vector<uint8_t>& input) {
+		// If no interlacing has been done, simply return data
+		if (m_interlaceMethod == 0) { return input; }
+
+		// TODO: Implement Adam7 deinterlacing
+		return input;
 	}
 }
