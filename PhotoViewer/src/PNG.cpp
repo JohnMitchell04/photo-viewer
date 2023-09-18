@@ -348,7 +348,9 @@ namespace ImageLibrary {
 	}
 
 	void PNG::ParsePixels(std::vector<uint8_t>& input) {
-		Utils::PixelFormat format = Utils::INVALID;
+		// TODO: Decide how to deal with pixels
+		// Thinking of having raw pixel data for vulkan operations etc. and a pixel struct for greater abstraction
+
 		// Select pixel format
 		switch (m_colourType) {
 		case 0:
@@ -364,19 +366,15 @@ namespace ImageLibrary {
 			// TODO: Implement
 			break;
 		case 6:
-			format = (m_bitDepth == 8 ? Utils::RGBA8 : Utils::RGBA16);
+			m_pixelFormat = (m_bitDepth == 8 ? Utils::RGBA8 : Utils::RGBA16);
 			break;
 		}
 
 		// Consume input to create image data
-		std::vector<std::vector<uint8_t>> data(m_height, std::vector<uint8_t>());
 		for (uint32_t y = 0; y < m_height; y++) {
-			std::copy(input.begin() + y * m_width * m_nBytesPerPixel, input.begin() + (y + 1) * m_width * m_nBytesPerPixel, std::back_inserter(data[y]));
+			std::copy(input.begin() + y * m_width * m_nBytesPerPixel, input.begin() + (y + 1) * m_width * m_nBytesPerPixel, std::back_inserter(m_imageData));
 		}
 
 		input.clear();
-
-		m_pixelData.SetFormat(format);
-		m_pixelData.SetPixelData(data);
 	}
 }

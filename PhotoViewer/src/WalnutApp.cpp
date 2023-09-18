@@ -13,10 +13,28 @@ public:
 	{
 		ImGui::Begin("Control Panel");
 		if (ImGui::Button("Open")) {
-			ImageLibrary::PNG image("C:\\Users\\johnr\\source\\repos\\photo-viewer\\PhotoViewer\\test\\2pixeltest.png");
+			m_loadedImage = std::make_unique<ImageLibrary::PNG>("C:\\Users\\johnr\\source\\repos\\photo-viewer\\PhotoViewer\\test\\2pixeltest.png");
 		}
 		ImGui::End();
+
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+		ImGui::Begin("Viewport");
+
+		// Use later when adding zoom
+		/*
+		m_ViewportWidth = ImGui::GetContentRegionAvail().x;
+		m_ViewportHeight = ImGui::GetContentRegionAvail().y;
+		*/
+
+		if (m_loadedImage)
+			ImGui::Image(m_loadedImage->GetDescriptorSet(), { (float)m_loadedImage->GetWidth(), (float)m_loadedImage->GetHeight() });
+
+		ImGui::End();
+		ImGui::PopStyleVar();
 	}
+
+private:
+	std::unique_ptr<ImageLibrary::Image> m_loadedImage;
 };
 
 Walnut::Application* Walnut::CreateApplication(int argc, char** argv)

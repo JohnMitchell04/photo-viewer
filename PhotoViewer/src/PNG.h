@@ -11,10 +11,10 @@
 #include "Image.h"
 
 namespace ImageLibrary {
-	class PNG : Image
+	class PNG : public Image
 	{
 	public:
-		PNG(std::string filePath) : Image(filePath) { InitCRC(); ReadFile(); };
+		PNG(std::string filePath) : Image(filePath) { InitCRC(); ReadFile(); GenerateDescriptorSet(); SetData(); };
 
 	private:
 		void InitCRC();
@@ -37,7 +37,6 @@ namespace ImageLibrary {
 		uint8_t m_compressionMethod;
 		uint8_t m_filterMethod;
 		uint8_t m_interlaceMethod;
-		uint8_t m_nBytesPerPixel;
 		std::vector<uint8_t> m_compressedData;
 	};
 }
