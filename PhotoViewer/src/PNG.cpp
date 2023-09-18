@@ -44,7 +44,7 @@ namespace ImageLibrary {
 	}
 
 	void PNG::ReadRawData() {
-		// Create input stream in binary mode throwing exceptions
+		// Create input stream in binary mode
 		std::ifstream file;
 		file.open(m_filePath, std::ios_base::binary);
 		file.unsetf(std::ios_base::skipws);
@@ -71,7 +71,7 @@ namespace ImageLibrary {
 
 		// Check header is valid
 		if (check != Utils::PNG_SIGNATURE) {
-			throw new std::runtime_error("PNG signature is invalid");
+			throw new std::runtime_error("Error: PNG signature is invalid");
 		}
 	}
 
@@ -87,7 +87,7 @@ namespace ImageLibrary {
 			m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
 			// Check length is within standard
-			if (length > (INT_MAX - 1)) { throw new std::runtime_error("Invalid chunk length"); }
+			if (length > (INT_MAX - 1)) { throw new std::runtime_error("Error: Invalid chunk length"); }
 
 			// Check CRC matches data
 			CheckCRC(length);
@@ -105,14 +105,14 @@ namespace ImageLibrary {
 			}
 
 			// If chunk is invalid exit
-			if (chunkSpecifierE == Utils::PNG::INVALID) { throw new std::runtime_error("Encountered chunk is invalid"); }
+			if (chunkSpecifierE == Utils::PNG::INVALID) { throw new std::runtime_error("Error: Encountered chunk is invalid"); }
 
 			// Ensure the correct chunk is encountered first
-			if (chunksIndex == 0 && chunkSpecifier != "IHDR") { throw new std::runtime_error("Chunk order is invalid"); }
+			if (chunksIndex == 0 && chunkSpecifier != "IHDR") { throw new std::runtime_error("Error: Chunk order is invalid"); }
 
 			// Check IDAT chunks are consecutive
 			if (encounteredIDAT && chunkSpecifierE == Utils::PNG::IDAT) {
-				if (encounteredChunks.back().identifier != Utils::PNG::IDAT) { throw new std::runtime_error("Chunk order is invalid"); }
+				if (encounteredChunks.back().identifier != Utils::PNG::IDAT) { throw new std::runtime_error("Error: Chunk order is invalid"); }
 			}
 
 			// TODO: Deal with PLTE chunk
@@ -160,7 +160,7 @@ namespace ImageLibrary {
 
 		// Compare calculated and stored CRC
 		if (chunkCRC != calculatedCRC) {
-			throw new std::runtime_error("Chunk is invalid");
+			throw new std::runtime_error("Error: Chunk CRC mismatch");
 		}
 	}
 
@@ -175,10 +175,10 @@ namespace ImageLibrary {
 
 		// Perform checks on dimensions
 		if (m_width > Utils::PNG_SPEC_MAX_DIMENSION || m_height > Utils::PNG_SPEC_MAX_DIMENSION || m_width < 0 || m_height < 0) {
-			throw new std::runtime_error("Image dimensions invalid");
+			throw new std::runtime_error("Error: Image dimensions invalid");
 		}
 
-		if (m_width > Utils::PNG_APP_MAX_DIMENSION || m_height > Utils::PNG_APP_MAX_DIMENSION) { throw new std::runtime_error("Application cannot display image"); }
+		if (m_width > Utils::PNG_APP_MAX_DIMENSION || m_height > Utils::PNG_APP_MAX_DIMENSION) { throw new std::runtime_error("Error: Application cannot display image"); }
 
 		// Get more image info
 		m_bitDepth = m_rawData[0];
@@ -195,13 +195,13 @@ namespace ImageLibrary {
 		// Greyscale
 		case 0:
 			if (m_bitDepth != 1 && m_bitDepth != 2 && m_bitDepth != 4 && m_bitDepth != 8 && m_bitDepth != 16) {
-				throw new std::runtime_error("Invalid colour type and bit depth combination");
+				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
 			break;
 		// Indexed Colour
 		case 3:
 			if (m_bitDepth != 1 && m_bitDepth != 2 && m_bitDepth != 4 && m_bitDepth != 8) {
-				throw new std::runtime_error("Invalid colour type and bit depth combination");
+				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
 			break;
 		// True colour
@@ -211,22 +211,22 @@ namespace ImageLibrary {
 		// True colour alpha
 		case 6:
 			if (m_bitDepth != 8 && m_bitDepth != 16) {
-				throw new std::runtime_error("Invalid colour type and bit depth combination");
+				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
 			break;
 		// Invalid colour type
 		default:
-			throw new std::runtime_error("Invalid colour type");
+			throw new std::runtime_error("Error: Invalid colour type");
 		}
 
 		// Do not process images with private compression methods
-		if (m_compressionMethod != 0) { throw new std::runtime_error("Incompatible compression method"); }
+		if (m_compressionMethod != 0) { throw new std::runtime_error("Error: Incompatible compression method"); }
 
 		// Do not process images with private filter methods
-		if (m_filterMethod != 0) { throw new std::runtime_error("Incompatible filter method"); }
+		if (m_filterMethod != 0) { throw new std::runtime_error("Error: Incompatible filter method"); }
 
 		// Do not process images with private interlace methods
-		if (m_interlaceMethod != 0 && m_interlaceMethod != 1) { throw new std::runtime_error("Incompatible interlace method"); }
+		if (m_interlaceMethod != 0 && m_interlaceMethod != 1) { throw new std::runtime_error("Error: Incompatible interlace method"); }
 
 		// TODO: Figure out how bit depth less than 8 works
 		switch (m_colourType) {
@@ -263,7 +263,7 @@ namespace ImageLibrary {
 		// Initialise the infaltion
 		err = inflateInit(&infStream);
 		if (err != Z_OK) {
-			throw new std::runtime_error("Decompression of data failed");
+			throw new std::runtime_error("Error: Decompression of data failed");
 		}
 
 		// Run inflate until all data has been decompressed
@@ -278,7 +278,7 @@ namespace ImageLibrary {
 			err = inflate(&infStream, Z_SYNC_FLUSH);
 			if (!(err == Z_OK || err == Z_STREAM_END)) {
 				inflateEnd(&infStream);
-				throw new std::runtime_error("Decompression of data failed");
+				throw new std::runtime_error("Error: Decompression of data failed");
 			}
 
 			// Copy decompressed data chunk
@@ -361,7 +361,7 @@ namespace ImageLibrary {
 					break;
 					// Invalid filter type type
 				default:
-					throw new std::runtime_error("Invalid filter type");
+					throw new std::runtime_error("Error: Invalid filter type");
 					break;
 				}
 
