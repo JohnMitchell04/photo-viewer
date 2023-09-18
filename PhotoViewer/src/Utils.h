@@ -16,6 +16,8 @@ namespace ImageLibrary {
 
 		// Pixel format types
 		enum PixelFormat {
+			RGB8,
+			RGB16,
 			RGBA8,
 			RGBA16,
 			INVALID

@@ -219,12 +219,14 @@ namespace ImageLibrary {
 
 	VkFormat Image::GetImageFormat() {
 		switch (m_pixelFormat) {
+		case Utils::RGB8:
+			return VK_FORMAT_R8G8B8_UNORM;
+		case Utils::RGB16:
+			return VK_FORMAT_R16G16B16_UNORM;
 		case Utils::RGBA8:
 			return VK_FORMAT_R8G8B8A8_UNORM;
-			break;
 		case Utils::RGBA16:
 			return VK_FORMAT_R16G16B16A16_UNORM;
-			break;
 		}
 	}
 

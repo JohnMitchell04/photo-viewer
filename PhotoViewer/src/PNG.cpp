@@ -190,7 +190,6 @@ namespace ImageLibrary {
 		// Consume additional information and CRC
 		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 9);
 
-		// TODO: calculate bytes per pixel in greyscale cases
 		// Check image info and set number of bytes per pixel
 		switch (m_colourType) {
 		// Greyscale
@@ -201,17 +200,25 @@ namespace ImageLibrary {
 			break;
 		// True colour
 		case 2:
+			if (m_bitDepth != 8 && m_bitDepth != 16) {
+				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
+			}
 			m_nBytesPerPixel = 3 * (m_bitDepth / 8.0);
+			break;
 		// Indexed Colour
 		case 3:
 			if (m_bitDepth != 1 && m_bitDepth != 2 && m_bitDepth != 4 && m_bitDepth != 8) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
-			// Addition of alpha is handled if ancilliary chunk is encountered
+			// Addition of alpha channel is handled if ancilliary chunk is encountered
 			m_nBytesPerPixel = 3 * 8;
 			break;
 		// Greyscale alpha
 		case 4:
+			if (m_bitDepth != 8 && m_bitDepth != 16) {
+				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
+			}
+			m_nBytesPerPixel = 4 * (m_bitDepth / 8.0);
 			break;
 		// True colour alpha
 		case 6:
@@ -377,18 +384,22 @@ namespace ImageLibrary {
 
 		// Select pixel format
 		switch (m_colourType) {
+			// Greyscale
 		case 0:
 			// TODO: Implement
 			break;
+			// True colour
 		case 2:
-			// TODO: Implement
+			m_pixelFormat = (m_bitDepth == 8 ? Utils::RGB8 : Utils::RGB16);
 			break;
+			// Indexed colour
 		case 3:
-			// TODO Implement
+			m_pixelFormat = (m_nBytesPerPixel == 4 ? Utils::RGB8 : Utils::RGBA8);
 			break;
+			// Greyscale with alpha
 		case 4:
-			// TODO: Implement
-			break;
+			[[fallthrough]]
+			// True colour with alpha
 		case 6:
 			m_pixelFormat = (m_bitDepth == 8 ? Utils::RGBA8 : Utils::RGBA16);
 			break;
