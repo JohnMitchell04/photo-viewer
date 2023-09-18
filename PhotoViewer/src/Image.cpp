@@ -223,7 +223,7 @@ namespace ImageLibrary {
 			return VK_FORMAT_R8G8B8A8_UNORM;
 			break;
 		case Utils::RGBA16:
-			return VK_FORMAT_R16G16B16A16_UINT;
+			return VK_FORMAT_R16G16B16A16_UNORM;
 			break;
 		}
 	}

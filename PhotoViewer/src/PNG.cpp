@@ -291,6 +291,36 @@ namespace ImageLibrary {
 	std::vector<uint8_t> PNG::UnfilterData(std::vector<uint8_t>& input) {
 		std::vector<uint8_t> output;
 
+		// Define functors for use
+		auto average = [this](uint32_t x, std::vector<uint8_t>& output) -> uint8_t {
+			// Can't get preceding byte if first pixel
+			uint8_t aByte = (std::floor(x / m_nBytesPerPixel) == 0 ? 0 : output[output.size() - m_nBytesPerPixel]);
+			// Can't get up byte if first scanline
+			uint8_t bByte = (std::floor(x / (m_nBytesPerPixel * m_width)) ? 0 : output[output.size() - m_nBytesPerPixel * m_width]);
+			return std::floor((aByte + bByte) / 2);
+		};
+
+		auto paeth = [this](uint32_t x, std::vector<uint8_t>& output) -> uint8_t {
+			// Can't get preceding byte if first pixel
+			uint8_t aByte = (std::floor(x / m_nBytesPerPixel) == 0 ? 0 : output[output.size() - m_nBytesPerPixel]);
+			// Can't get up byte if first scanline
+			uint8_t bByte = (std::floor(x / (m_nBytesPerPixel * m_width)) ? 0 : output[output.size() - m_nBytesPerPixel * m_width]);
+			// Can't get preceding up byte if first pixel or scanline
+			uint8_t cByte = (std::floor(x / m_nBytesPerPixel) == 0 || std::floor(x / (m_nBytesPerPixel * m_width))) ? 0 : output[output.size() - m_nBytesPerPixel * (m_width + 1)];
+
+			// Perform paeth
+			uint8_t result;
+			int p = aByte + bByte - cByte;
+			int paethA = std::abs(p - aByte);
+			int paethB = std::abs(p - bByte);
+			int paethC = std::abs(p - cByte);
+
+			if (paethA <= paethB && paethA <= paethC) { result = aByte; }
+			else if (paethB <= paethC) { result = bByte; }
+			else { result = cByte; }
+			return result;
+		};
+
 		// Iterate through each scanline and unfliter appropriately
 		for (uint32_t y = 0; y < m_height; y++) {
 			// Get scanline filter type
@@ -299,40 +329,44 @@ namespace ImageLibrary {
 			// Consume byte
 			input.erase(input.begin());
 
-			for (uint32_t x = 0; x < m_width; x++) {
-				for (uint8_t i = 0; i < m_nBytesPerPixel; i++) {
-					uint8_t currentByte;
+			// TODO: Check performance impact of this for larger images
+			for (uint32_t x = 0; x < m_width * m_nBytesPerPixel; x++) {
+				uint8_t currentByte;
 
-					switch (filterType) {
-						// None
-					case 0:
-						currentByte = input[0];
-						break;
-						// Sub
-					case 1:
-						// Can't get preceding byte if first pixel
-						currentByte = input[0] + (x == 0 ? 0 : output[output.size() - m_nBytesPerPixel]);
-						break;
-						// Up
-					case 2:
-						// TODO: Implement
-						break;
-						// Average
-					case 3:
-						// TODO: Implement
-						break;
-						// Paeth
-					case 4:
-						// TODO: Implement
-						break;
-					}
-
-					// Add reconstructed byte to output
-					output.push_back(currentByte);
-
-					// Consume byte
-					input.erase(input.begin());
+				switch (filterType) {
+					// None
+				case 0:
+					currentByte = input[0];
+					break;
+					// Sub
+				case 1:
+					// Can't get preceding byte if first pixel
+					currentByte = input[0] + (std::floor(x / m_nBytesPerPixel) == 0 ? 0 : output[output.size() - m_nBytesPerPixel]);
+					break;
+					// Up
+				case 2:
+					// Can't get up byte if first scanline
+					currentByte = input[0] + (std::floor(x / (m_nBytesPerPixel * m_width)) ? 0 : output[output.size() - m_nBytesPerPixel * m_width]);
+					break;
+					// Average
+				case 3:
+					currentByte = input[0] + average(x, output);
+					break;
+					// Paeth
+				case 4:
+					currentByte = input[0] + paeth(x, output);
+					break;
+					// Invalid filter type type
+				default:
+					throw new std::runtime_error("Invalid filter type");
+					break;
 				}
+
+				// Add reconstructed byte to output
+				output.push_back(currentByte);
+
+				// Consume byte
+				input.erase(input.begin());
 			}
 		}
 
