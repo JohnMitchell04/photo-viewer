@@ -190,7 +190,8 @@ namespace ImageLibrary {
 		// Consume additional information and CRC
 		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 9);
 
-		// Check image info
+		// TODO: calculate bytes per pixel in greyscale cases
+		// Check image info and set number of bytes per pixel
 		switch (m_colourType) {
 		// Greyscale
 		case 0:
@@ -198,21 +199,26 @@ namespace ImageLibrary {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
 			break;
+		// True colour
+		case 2:
+			m_nBytesPerPixel = 3 * (m_bitDepth / 8.0);
 		// Indexed Colour
 		case 3:
 			if (m_bitDepth != 1 && m_bitDepth != 2 && m_bitDepth != 4 && m_bitDepth != 8) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
+			// Addition of alpha is handled if ancilliary chunk is encountered
+			m_nBytesPerPixel = 3 * 8;
 			break;
-		// True colour
-		case 2:
 		// Greyscale alpha
 		case 4:
+			break;
 		// True colour alpha
 		case 6:
 			if (m_bitDepth != 8 && m_bitDepth != 16) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
+			m_nBytesPerPixel = 4 * (m_bitDepth / 8.0);
 			break;
 		// Invalid colour type
 		default:
@@ -227,25 +233,6 @@ namespace ImageLibrary {
 
 		// Do not process images with private interlace methods
 		if (m_interlaceMethod != 0 && m_interlaceMethod != 1) { throw new std::runtime_error("Error: Incompatible interlace method"); }
-
-		// TODO: Figure out how bit depth less than 8 works
-		switch (m_colourType) {
-		case 0:
-			// TODO: Implement
-			break;
-		case 2:
-			m_nBytesPerPixel = 3 * (m_bitDepth / 8.0);
-			break;
-		case 3:
-			// TODO Implement
-			break;
-		case 4:
-			// TODO: Implement
-			break;
-		case 6:
-			m_nBytesPerPixel = 4 * (m_bitDepth / 8.0);
-			break;
-		}
 	}
 
 	std::vector<uint8_t> PNG::DecompressData() {
