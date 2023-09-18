@@ -127,8 +127,12 @@ namespace ImageLibrary {
 				m_rawData.erase(m_rawData.begin(), m_rawData.begin() + length + 4);
 				break;
 			case Utils::PNG::IEND:
-				// TODO: Ensure nothing follows the IEND chunk
-				m_rawData.clear();
+				// Consume CRC
+				m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
+				// Ensure IEND is last data
+				if (m_rawData.size() > 0) { throw new std::runtime_error("Error: Data is present after IEND chunk"); }
+				// Shrink vector capacity to 0
+				m_rawData.shrink_to_fit();
 				break;
 			}
 
@@ -287,7 +291,6 @@ namespace ImageLibrary {
 		return output;
 	}
 
-	// TODO: This is ugly, clean up
 	std::vector<uint8_t> PNG::UnfilterData(std::vector<uint8_t>& input) {
 		std::vector<uint8_t> output;
 
