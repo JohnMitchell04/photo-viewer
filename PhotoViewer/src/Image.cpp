@@ -96,10 +96,26 @@ namespace ImageLibrary {
 	}
 
 	void Image::SetData() {
+		// Get image format size
+		uint8_t pixelSize = 0;
+		switch (m_pixelFormat) {
+		case Utils::RGB8:
+			pixelSize = 3;
+			break;
+		case Utils::RGBA8:
+			pixelSize = 4;
+			break;
+		case Utils::RGB16:
+			pixelSize = 6;
+			break;
+		case Utils::RGBA16:
+			pixelSize = 8;
+			break;
+		}
+
 		// Get necessary information
 		VkDevice device = Walnut::Application::GetDevice();
-		// TODO: Replace with logic using image format
-		size_t upload_size = m_width * m_height * m_bitsPerPixel;
+		size_t upload_size = m_width * m_height * pixelSize;
 		VkResult err;
 
 		if (!m_stagingBuffer)
