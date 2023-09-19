@@ -4,7 +4,7 @@
 
 namespace ImageLibrary {
 	/*
-		All code relating to Vulkan in this file was taken from Walnut created by Yan Chernovik
+		Most code relating to Vulkan in this file was taken from Walnut created by Yan Chernovik
 		Accessible here: https://github.com/StudioCherno/Walnut
 	*/
 	void Image::GenerateDescriptorSet() {
@@ -30,6 +30,15 @@ namespace ImageLibrary {
 			info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 			info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 			info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+			// Some implementations of Vulkan do not require format R8G8B8 so alpha must be added for images without an alpha channel
+			VkImageFormatProperties check;
+			err = vkGetPhysicalDeviceImageFormatProperties(Walnut::Application::GetPhysicalDevice(), imageFormat, info.imageType, info.tiling, info.usage, info.flags, &check);
+			if (err == VK_ERROR_FORMAT_NOT_SUPPORTED) {
+				info = AddAlphaChannel();
+				imageFormat = GetImageFormat();
+			}
+			else { check_vk_result(err); }
 
 			// Create image
 			err = vkCreateImage(device, &info, nullptr, &m_image);
@@ -96,9 +105,26 @@ namespace ImageLibrary {
 	}
 
 	void Image::SetData() {
+		// Get image format size
+		uint8_t pixelSize = 0;
+		switch (m_pixelFormat) {
+		case Utils::RGB8:
+			pixelSize = 3;
+			break;
+		case Utils::RGBA8:
+			pixelSize = 4;
+			break;
+		case Utils::RGB16:
+			pixelSize = 6;
+			break;
+		case Utils::RGBA16:
+			pixelSize = 8;
+			break;
+		}
+
 		// Get necessary information
 		VkDevice device = Walnut::Application::GetDevice();
-		size_t upload_size = m_width * m_height * m_nBytesPerPixel;
+		size_t upload_size = m_width * m_height * pixelSize;
 		VkResult err;
 
 		if (!m_stagingBuffer)
@@ -219,13 +245,51 @@ namespace ImageLibrary {
 
 	VkFormat Image::GetImageFormat() {
 		switch (m_pixelFormat) {
+		case Utils::RGB8:
+			return VK_FORMAT_R8G8B8_UNORM;
+		case Utils::RGB16:
+			return VK_FORMAT_R16G16B16_UNORM;
 		case Utils::RGBA8:
 			return VK_FORMAT_R8G8B8A8_UNORM;
-			break;
 		case Utils::RGBA16:
-			return VK_FORMAT_R16G16B16A16_UINT;
+			return VK_FORMAT_R16G16B16A16_UNORM;
+		}
+	}
+
+	VkImageCreateInfo Image::AddAlphaChannel() {
+		for (uint32_t i = 0; i < m_width * m_height; i++) {
+			m_imageData.insert(m_imageData.begin() + (i * (m_bytesPerPixel + m_bytesPerPixel / 3)) + m_bytesPerPixel, m_bytesPerPixel / 3, 0xff);
+		}
+
+		VkFormat imageFormat;
+		// Select new image format
+		switch (GetImageFormat()) {
+		case VK_FORMAT_R8G8B8_UNORM:
+			imageFormat = VK_FORMAT_R8G8B8A8_UNORM;
+			m_pixelFormat = Utils::RGBA8;
+			break;
+		case VK_FORMAT_R16G16B16_UNORM:
+			imageFormat = VK_FORMAT_R16G16B16A16_UNORM;
+			m_pixelFormat = Utils::RGBA16;
 			break;
 		}
+
+		VkImageCreateInfo info = {};
+		info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		info.imageType = VK_IMAGE_TYPE_2D;
+		info.format = imageFormat;
+		info.extent.width = m_width;
+		info.extent.height = m_height;
+		info.extent.depth = 1;
+		info.mipLevels = 1;
+		info.arrayLayers = 1;
+		info.samples = VK_SAMPLE_COUNT_1_BIT;
+		info.tiling = VK_IMAGE_TILING_OPTIMAL;
+		info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+		return info;
 	}
 
 	uint32_t Image::GetVulkanMemoryType(VkMemoryPropertyFlags properties, uint32_t type_bits)

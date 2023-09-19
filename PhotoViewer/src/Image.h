@@ -28,6 +28,7 @@ namespace ImageLibrary {
 
 	private:
 		VkFormat GetImageFormat();
+		VkImageCreateInfo AddAlphaChannel();
 		uint32_t GetVulkanMemoryType(VkMemoryPropertyFlags properties, uint32_t type_bits);
 		void Release();
 
@@ -38,7 +39,7 @@ namespace ImageLibrary {
 		uint32_t m_height = 0;
 		Utils::PixelFormat m_pixelFormat = Utils::INVALID;
 		std::vector<uint8_t> m_imageData;
-		uint8_t m_nBytesPerPixel = 0;
+		uint8_t m_bytesPerPixel = 0;
 
 		// Vulkan stuff
 		VkImage m_image = nullptr;

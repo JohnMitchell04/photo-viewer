@@ -44,7 +44,7 @@ namespace ImageLibrary {
 	}
 
 	void PNG::ReadRawData() {
-		// Create input stream in binary mode throwing exceptions
+		// Create input stream in binary mode
 		std::ifstream file;
 		file.open(m_filePath, std::ios_base::binary);
 		file.unsetf(std::ios_base::skipws);
@@ -71,7 +71,7 @@ namespace ImageLibrary {
 
 		// Check header is valid
 		if (check != Utils::PNG_SIGNATURE) {
-			throw new std::runtime_error("PNG signature is invalid");
+			throw new std::runtime_error("Error: PNG signature is invalid");
 		}
 	}
 
@@ -83,11 +83,11 @@ namespace ImageLibrary {
 		do {
 			// Consume chunk length remembering it is big endian
 			uint32_t length;
-			Utils::ExtractBigEndian(length, m_rawData.data(), 4);
+			Utils::ExtractBigEndian(length, m_rawData.data());
 			m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
 			// Check length is within standard
-			if (length > (INT_MAX - 1)) { throw new std::runtime_error("Invalid chunk length"); }
+			if (length > (INT_MAX - 1)) { throw new std::runtime_error("Error: Invalid chunk length"); }
 
 			// Check CRC matches data
 			CheckCRC(length);
@@ -105,14 +105,14 @@ namespace ImageLibrary {
 			}
 
 			// If chunk is invalid exit
-			if (chunkSpecifierE == Utils::PNG::INVALID) { throw new std::runtime_error("Encountered chunk is invalid"); }
+			if (chunkSpecifierE == Utils::PNG::INVALID) { throw new std::runtime_error("Error: Encountered chunk is invalid"); }
 
 			// Ensure the correct chunk is encountered first
-			if (chunksIndex == 0 && chunkSpecifier != "IHDR") { throw new std::runtime_error("Chunk order is invalid"); }
+			if (chunksIndex == 0 && chunkSpecifier != "IHDR") { throw new std::runtime_error("Error: Chunk order is invalid"); }
 
 			// Check IDAT chunks are consecutive
 			if (encounteredIDAT && chunkSpecifierE == Utils::PNG::IDAT) {
-				if (encounteredChunks.back().identifier != Utils::PNG::IDAT) { throw new std::runtime_error("Chunk order is invalid"); }
+				if (encounteredChunks.back().identifier != Utils::PNG::IDAT) { throw new std::runtime_error("Error: Chunk order is invalid"); }
 			}
 
 			// TODO: Deal with PLTE chunk
@@ -127,8 +127,12 @@ namespace ImageLibrary {
 				m_rawData.erase(m_rawData.begin(), m_rawData.begin() + length + 4);
 				break;
 			case Utils::PNG::IEND:
-				// TODO: Ensure nothing follows the IEND chunk
-				m_rawData.clear();
+				// Consume CRC
+				m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
+				// Ensure IEND is last data
+				if (m_rawData.size() > 0) { throw new std::runtime_error("Error: Data is present after IEND chunk"); }
+				// Shrink vector capacity to 0
+				m_rawData.shrink_to_fit();
 				break;
 			}
 
@@ -143,7 +147,7 @@ namespace ImageLibrary {
 
 		// Get the CRC in the chunk remembering it is big endian
 		uint32_t chunkCRC;
-		Utils::ExtractBigEndian(chunkCRC, m_rawData.data() + 4 + length, 4);
+		Utils::ExtractBigEndian(chunkCRC, m_rawData.data() + 4 + length);
 
 		// Calculate the expected CRC
 		uint32_t c = 0xffffffffL;
@@ -156,25 +160,25 @@ namespace ImageLibrary {
 
 		// Compare calculated and stored CRC
 		if (chunkCRC != calculatedCRC) {
-			throw new std::runtime_error("Chunk is invalid");
+			throw new std::runtime_error("Error: Chunk CRC mismatch");
 		}
 	}
 
 	void PNG::ParseIHDR() {
 		// Consume width remembering it is big endian
-		Utils::ExtractBigEndian(m_width, m_rawData.data(), 4);
+		Utils::ExtractBigEndian(m_width, m_rawData.data());
 		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
 		// Consume height remembering it is big endian
-		Utils::ExtractBigEndian(m_height, m_rawData.data(), 4);
+		Utils::ExtractBigEndian(m_height, m_rawData.data());
 		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
 		// Perform checks on dimensions
 		if (m_width > Utils::PNG_SPEC_MAX_DIMENSION || m_height > Utils::PNG_SPEC_MAX_DIMENSION || m_width < 0 || m_height < 0) {
-			throw new std::runtime_error("Image dimensions invalid");
+			throw new std::runtime_error("Error: Image dimensions invalid");
 		}
 
-		if (m_width > Utils::PNG_APP_MAX_DIMENSION || m_height > Utils::PNG_APP_MAX_DIMENSION) { throw new std::runtime_error("Application cannot display image"); }
+		if (m_width > Utils::PNG_APP_MAX_DIMENSION || m_height > Utils::PNG_APP_MAX_DIMENSION) { throw new std::runtime_error("Error: Application cannot display image"); }
 
 		// Get more image info
 		m_bitDepth = m_rawData[0];
@@ -186,62 +190,56 @@ namespace ImageLibrary {
 		// Consume additional information and CRC
 		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 9);
 
-		// Check image info
+		// Check image info and set number of bytes per pixel
 		switch (m_colourType) {
 		// Greyscale
 		case 0:
 			if (m_bitDepth != 1 && m_bitDepth != 2 && m_bitDepth != 4 && m_bitDepth != 8 && m_bitDepth != 16) {
-				throw new std::runtime_error("Invalid colour type and bit depth combination");
+				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
+			m_bytesPerPixel = std::ceil(m_bitDepth / 8);
+			break;
+		// True colour
+		case 2:
+			if (m_bitDepth != 8 && m_bitDepth != 16) {
+				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
+			}
+			m_bytesPerPixel = 3 * (m_bitDepth / 8);
 			break;
 		// Indexed Colour
 		case 3:
 			if (m_bitDepth != 1 && m_bitDepth != 2 && m_bitDepth != 4 && m_bitDepth != 8) {
-				throw new std::runtime_error("Invalid colour type and bit depth combination");
+				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
+			m_bytesPerPixel = 1;
 			break;
-		// True colour
-		case 2:
 		// Greyscale alpha
 		case 4:
+			if (m_bitDepth != 8 && m_bitDepth != 16) {
+				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
+			}
+			m_bytesPerPixel = 2 * (m_bitDepth / 8);
+			break;
 		// True colour alpha
 		case 6:
 			if (m_bitDepth != 8 && m_bitDepth != 16) {
-				throw new std::runtime_error("Invalid colour type and bit depth combination");
+				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
+			m_bytesPerPixel = 4 * (m_bitDepth / 8);
 			break;
 		// Invalid colour type
 		default:
-			throw new std::runtime_error("Invalid colour type");
+			throw new std::runtime_error("Error: Invalid colour type");
 		}
 
 		// Do not process images with private compression methods
-		if (m_compressionMethod != 0) { throw new std::runtime_error("Incompatible compression method"); }
+		if (m_compressionMethod != 0) { throw new std::runtime_error("Error: Incompatible compression method"); }
 
 		// Do not process images with private filter methods
-		if (m_filterMethod != 0) { throw new std::runtime_error("Incompatible filter method"); }
+		if (m_filterMethod != 0) { throw new std::runtime_error("Error: Incompatible filter method"); }
 
 		// Do not process images with private interlace methods
-		if (m_interlaceMethod != 0 && m_interlaceMethod != 1) { throw new std::runtime_error("Incompatible interlace method"); }
-
-		// TODO: Figure out how bit depth less than 8 works
-		switch (m_colourType) {
-		case 0:
-			// TODO: Implement
-			break;
-		case 2:
-			m_nBytesPerPixel = 3 * (m_bitDepth / 8.0);
-			break;
-		case 3:
-			// TODO Implement
-			break;
-		case 4:
-			// TODO: Implement
-			break;
-		case 6:
-			m_nBytesPerPixel = 4 * (m_bitDepth / 8.0);
-			break;
-		}
+		if (m_interlaceMethod != 0 && m_interlaceMethod != 1) { throw new std::runtime_error("Error: Incompatible interlace method"); }
 	}
 
 	std::vector<uint8_t> PNG::DecompressData() {
@@ -259,7 +257,7 @@ namespace ImageLibrary {
 		// Initialise the infaltion
 		err = inflateInit(&infStream);
 		if (err != Z_OK) {
-			throw new std::runtime_error("Decompression of data failed");
+			throw new std::runtime_error("Error: Decompression of data failed");
 		}
 
 		// Run inflate until all data has been decompressed
@@ -274,7 +272,7 @@ namespace ImageLibrary {
 			err = inflate(&infStream, Z_SYNC_FLUSH);
 			if (!(err == Z_OK || err == Z_STREAM_END)) {
 				inflateEnd(&infStream);
-				throw new std::runtime_error("Decompression of data failed");
+				throw new std::runtime_error("Error: Decompression of data failed");
 			}
 
 			// Copy decompressed data chunk
@@ -287,9 +285,23 @@ namespace ImageLibrary {
 		return output;
 	}
 
-	// TODO: This is ugly, clean up
 	std::vector<uint8_t> PNG::UnfilterData(std::vector<uint8_t>& input) {
 		std::vector<uint8_t> output;
+
+		// Define paeth functor for use
+		auto paeth = [](uint8_t aByte, uint8_t bByte, uint8_t cByte) -> uint8_t {
+			// Perform paeth
+			uint8_t result;
+			int p = aByte + bByte - cByte;
+			int paethA = std::abs(p - aByte);
+			int paethB = std::abs(p - bByte);
+			int paethC = std::abs(p - cByte);
+
+			if (paethA <= paethB && paethA <= paethC) { result = aByte; }
+			else if (paethB <= paethC) { result = bByte; }
+			else { result = cByte; }
+			return result;
+		};
 
 		// Iterate through each scanline and unfliter appropriately
 		for (uint32_t y = 0; y < m_height; y++) {
@@ -299,42 +311,56 @@ namespace ImageLibrary {
 			// Consume byte
 			input.erase(input.begin());
 
-			for (uint32_t x = 0; x < m_width; x++) {
-				for (uint8_t i = 0; i < m_nBytesPerPixel; i++) {
-					uint8_t currentByte;
+			// TODO: Check performance impact of this for larger images
+			for (uint32_t x = 0; x < m_width * m_bytesPerPixel; x++) {
+				uint8_t currentByte;
 
-					switch (filterType) {
-						// None
-					case 0:
-						currentByte = input[0];
-						break;
-						// Sub
-					case 1:
-						// Can't get preceding byte if first pixel
-						currentByte = input[0] + (x == 0 ? 0 : output[output.size() - m_nBytesPerPixel]);
-						break;
-						// Up
-					case 2:
-						// TODO: Implement
-						break;
-						// Average
-					case 3:
-						// TODO: Implement
-						break;
-						// Paeth
-					case 4:
-						// TODO: Implement
-						break;
-					}
+				bool firstPixel = (std::floor(x / m_bytesPerPixel) == 0 ? true : false);
+				bool firstScanline = (y == 0 ? true : false);
 
-					// Add reconstructed byte to output
-					output.push_back(currentByte);
+				uint8_t aByte = (firstPixel ? 0 : output[output.size() - m_bytesPerPixel]);
+				uint8_t bByte = (firstScanline ? 0 : output[output.size() - m_bytesPerPixel * m_width]);
+				uint8_t cByte = (firstPixel || firstScanline ? 0 : output[output.size() - m_bytesPerPixel * (m_width + 1)]);
 
-					// Consume byte
-					input.erase(input.begin());
+				switch (filterType) {
+					// None
+				case 0:
+					currentByte = input[0];
+					break;
+					// Sub
+				case 1:
+					// Can't get preceding byte if first pixel
+					currentByte = input[0] + aByte;
+					break;
+					// Up
+				case 2:
+					// Can't get up byte if first scanline
+					currentByte = input[0] + bByte;
+					break;
+					// Average
+				case 3:
+					currentByte = input[0] + std::floor((aByte + bByte) / 2);
+					break;
+					// Paeth
+				case 4:
+					currentByte = input[0] + paeth(aByte, bByte, cByte);
+					break;
+					// Invalid filter type type
+				default:
+					throw new std::runtime_error("Error: Invalid filter type");
+					break;
 				}
+
+				// Add reconstructed byte to output
+				output.push_back(currentByte);
+
+				// Consume byte
+				input.erase(input.begin());
 			}
 		}
+
+		// Shrink input to 0
+		input.shrink_to_fit();
 
 		return output;
 	}
@@ -353,28 +379,74 @@ namespace ImageLibrary {
 
 		// Select pixel format
 		switch (m_colourType) {
+			// Greyscale
 		case 0:
-			// TODO: Implement
+			m_pixelFormat = Utils::RGB8;
 			break;
+			// True colour
 		case 2:
-			// TODO: Implement
+			m_pixelFormat = (m_bitDepth == 8 ? Utils::RGB8 : Utils::RGB16);
 			break;
+			// Indexed colour
 		case 3:
-			// TODO Implement
+			// Check for alpha channel
+			m_pixelFormat = (m_indexedAlpha ? Utils::RGBA8 : Utils::RGB8);
 			break;
+			// Greyscale with alpha
 		case 4:
-			// TODO: Implement
-			break;
+			[[fallthrough]];
+			// True colour with alpha
 		case 6:
 			m_pixelFormat = (m_bitDepth == 8 ? Utils::RGBA8 : Utils::RGBA16);
 			break;
 		}
 
-		// Consume input to create image data
-		for (uint32_t y = 0; y < m_height; y++) {
-			std::copy(input.begin() + y * m_width * m_nBytesPerPixel, input.begin() + (y + 1) * m_width * m_nBytesPerPixel, std::back_inserter(m_imageData));
+		// If true colour type data can be copied as is accounting for endianess
+		if (m_colourType == 2 || m_colourType == 6) {
+			// If using bit depth equal to one byte or on big endian system, copy as is
+			if (m_bitDepth == 8 || (m_bitDepth == 16 && std::endian::native == std::endian::big)) {
+				std::copy(input.begin(), input.end(), std::back_inserter(m_imageData));
+				input.clear();
+			}
+			// Otherwise perform endianess conversion
+			else {
+				for (uint32_t i = 0; i < m_width * m_height * (m_bytesPerPixel / 2); i++) {
+					// Extract value
+					uint16_t output;
+					Utils::ExtractBigEndian(output, input.data());
+
+					// Flip endianess
+					uint16_t flipped;
+					Utils::FlipEndian(flipped, output);
+
+					// Copy value to image data
+					m_imageData.push_back(flipped >> 8);
+					m_imageData.push_back(flipped);
+
+					input.erase(input.begin(), input.begin() + 2);
+				}
+			}
+		}
+		// If indexed colour substitute pallete values in
+		else if (m_colourType == 3) {
+			// TODO: Implement
+		}
+		// If greyscale with alpha copy value for each colour component and add alpha
+		else if (m_colourType == 4) {
+			for (uint32_t i = 0; i < m_width * m_height; i++) {
+				for (int j = 0; j < 3; j++) {
+					std::copy(input.begin(), input.begin() + (m_bitDepth / 8), std::back_inserter(m_imageData));
+				}
+
+				// Copy alpha value
+				std::copy(input.begin() + (m_bitDepth / 8), input.begin() + 2 * (m_bitDepth / 8), std::back_inserter(m_imageData));
+
+				// Consume pixel data
+				input.erase(input.begin(), input.begin() + 2 * (m_bitDepth / 8));
+			}
 		}
 
-		input.clear();
+		// Shrink input to 0
+		input.shrink_to_fit();
 	}
 }
