@@ -83,7 +83,7 @@ namespace ImageLibrary {
 		do {
 			// Consume chunk length remembering it is big endian
 			uint32_t length;
-			Utils::ExtractBigEndian(length, m_rawData.data(), 4);
+			Utils::ExtractBigEndian(length, m_rawData.data());
 			m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
 			// Check length is within standard
@@ -147,7 +147,7 @@ namespace ImageLibrary {
 
 		// Get the CRC in the chunk remembering it is big endian
 		uint32_t chunkCRC;
-		Utils::ExtractBigEndian(chunkCRC, m_rawData.data() + 4 + length, 4);
+		Utils::ExtractBigEndian(chunkCRC, m_rawData.data() + 4 + length);
 
 		// Calculate the expected CRC
 		uint32_t c = 0xffffffffL;
@@ -166,11 +166,11 @@ namespace ImageLibrary {
 
 	void PNG::ParseIHDR() {
 		// Consume width remembering it is big endian
-		Utils::ExtractBigEndian(m_width, m_rawData.data(), 4);
+		Utils::ExtractBigEndian(m_width, m_rawData.data());
 		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
 		// Consume height remembering it is big endian
-		Utils::ExtractBigEndian(m_height, m_rawData.data(), 4);
+		Utils::ExtractBigEndian(m_height, m_rawData.data());
 		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
 		// Perform checks on dimensions
@@ -359,6 +359,9 @@ namespace ImageLibrary {
 			}
 		}
 
+		// Shrink input to 0
+		input.shrink_to_fit();
+
 		return output;
 	}
 
@@ -398,30 +401,54 @@ namespace ImageLibrary {
 			break;
 		}
 
-		// If true colour type data can be copied as is
+		// If true colour type data can be copied as is accounting for endianess
 		if (m_colourType == 2 || m_colourType == 6) {
-			std::copy(input.begin(), input.end(), std::back_inserter(m_imageData));
+			// If using bit depth equal to one byte or on big endian system, copy as is
+			if (m_bitDepth == 8 || std::endian::native == std::endian::big) {
+				std::copy(input.begin(), input.end(), std::back_inserter(m_imageData));
+				input.clear();
+			}
+			// Otherwise perform endianess conversion
+			else {
+				for (uint32_t i = 0; i < m_width * m_height * 4; i++) {
+					// Extract value
+					uint16_t output;
+					Utils::ExtractBigEndian(output, input.data());
+
+					// Flip endianess
+					uint16_t flipped;
+					Utils::FlipEndian(flipped, output);
+
+					// Copy value to image data
+					m_imageData.push_back(flipped >> 8);
+					m_imageData.push_back(flipped);
+
+					input.erase(input.begin(), input.begin() + 2);
+				}
+
+				int test = 0;
+			}
 		}
 		// If indexed colour substitute pallete values in
 		else if (m_colourType == 3) {
 			// TODO: Implement
 		}
-		// Normal greyscale can also be handled here when decisions are fully made
+		// If greyscale with alpha copy value for each colour component and add alpha
 		else if (m_colourType == 4) {
 			for (uint32_t i = 0; i < m_width * m_height; i++) {
-				// Add greyscale 3 times for individual RGB components
-				for (int i = 0; i < 3; i++) {
-					m_imageData.push_back(input[0]);
+				for (int j = 0; j < 3; j++) {
+					std::copy(input.begin(), input.begin() + (m_bitDepth / 8), std::back_inserter(m_imageData));
 				}
 
-				// Consume greyscale value
-				input.erase(input.begin());
-				// Add alpha value and consume
-				m_imageData.push_back(input[0]);
-				input.erase(input.begin());
+				// Copy alpha value
+				std::copy(input.begin() + (m_bitDepth / 8), input.begin() + 2 * (m_bitDepth / 8), std::back_inserter(m_imageData));
+
+				// Consume pixel data
+				input.erase(input.begin(), input.begin() + 2 * (m_bitDepth / 8));
 			}
 		}
 
-		input.clear();
+		// Shrink input to 0
+		input.shrink_to_fit();
 	}
 }

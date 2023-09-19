@@ -5,7 +5,6 @@
 #include <filesystem>
 #include <iterator>
 #include <ctype.h>
-#include <tuple>
 #include <array>
 
 #include "Image.h"

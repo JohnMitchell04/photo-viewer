@@ -35,10 +35,23 @@ namespace ImageLibrary {
 		concept IntegerType = std::is_integral<T>::value && !std::same_as<T, bool>;
 
 		template <IntegerType T>
-		void ExtractBigEndian(T& dest, uint8_t* src, int bytes) {
+		void ExtractBigEndian(T& dest, uint8_t* src) {
+			int bytes = sizeof(T);
 			dest = 0;
 			for (int i = 0; i < bytes; i++) {
 				dest |= ((T)src[i] << (8 * (bytes - 1 - i)));
+			}
+		}
+
+		template <typename T>
+		concept EvenSizeIntegerType = IntegerType<T> && (sizeof(T) % 2 == 0);
+
+		template <EvenSizeIntegerType T>
+		void FlipEndian(T& dest, T& src) {
+			dest = 0;
+			for (int i = 0; i < sizeof(T) / 2; i++) {
+				int shiftAmount = sizeof(T) * 8 - (i + 1) * 8;
+				dest |= (src << shiftAmount & 0xff << shiftAmount) | (src >> shiftAmount & (0xff << (sizeof(T) - 1) * 8) >> shiftAmount);
 			}
 		}
 
