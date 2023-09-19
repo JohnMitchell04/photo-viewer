@@ -28,6 +28,7 @@ namespace ImageLibrary {
 
 	private:
 		VkFormat GetImageFormat();
+		VkImageCreateInfo AddAlphaChannel();
 		uint32_t GetVulkanMemoryType(VkMemoryPropertyFlags properties, uint32_t type_bits);
 		void Release();
 

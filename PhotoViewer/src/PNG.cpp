@@ -404,13 +404,13 @@ namespace ImageLibrary {
 		// If true colour type data can be copied as is accounting for endianess
 		if (m_colourType == 2 || m_colourType == 6) {
 			// If using bit depth equal to one byte or on big endian system, copy as is
-			if (m_bitDepth == 8 || std::endian::native == std::endian::big) {
+			if (m_bitDepth == 8 || (m_bitDepth == 16 && std::endian::native == std::endian::big)) {
 				std::copy(input.begin(), input.end(), std::back_inserter(m_imageData));
 				input.clear();
 			}
 			// Otherwise perform endianess conversion
 			else {
-				for (uint32_t i = 0; i < m_width * m_height * 4; i++) {
+				for (uint32_t i = 0; i < m_width * m_height * (m_bytesPerPixel / 2); i++) {
 					// Extract value
 					uint16_t output;
 					Utils::ExtractBigEndian(output, input.data());
@@ -425,8 +425,6 @@ namespace ImageLibrary {
 
 					input.erase(input.begin(), input.begin() + 2);
 				}
-
-				int test = 0;
 			}
 		}
 		// If indexed colour substitute pallete values in
