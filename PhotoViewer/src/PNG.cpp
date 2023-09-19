@@ -197,35 +197,35 @@ namespace ImageLibrary {
 			if (m_bitDepth != 1 && m_bitDepth != 2 && m_bitDepth != 4 && m_bitDepth != 8 && m_bitDepth != 16) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
-			m_bitsPerPixel = m_bitDepth;
+			m_bytesPerPixel = std::ceil(m_bitDepth / 8);
 			break;
 		// True colour
 		case 2:
 			if (m_bitDepth != 8 && m_bitDepth != 16) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
-			m_bitsPerPixel = 3 * m_bitDepth;
+			m_bytesPerPixel = 3 * (m_bitDepth / 8);
 			break;
 		// Indexed Colour
 		case 3:
 			if (m_bitDepth != 1 && m_bitDepth != 2 && m_bitDepth != 4 && m_bitDepth != 8) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
-			m_bitsPerPixel = m_bitDepth;
+			m_bytesPerPixel = 1;
 			break;
 		// Greyscale alpha
 		case 4:
 			if (m_bitDepth != 8 && m_bitDepth != 16) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
-			m_bitsPerPixel = 2 * m_bitDepth;
+			m_bytesPerPixel = 2 * (m_bitDepth / 8);
 			break;
 		// True colour alpha
 		case 6:
 			if (m_bitDepth != 8 && m_bitDepth != 16) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
-			m_bitsPerPixel = 4 * m_bitDepth;
+			m_bytesPerPixel = 4 * (m_bitDepth / 8);
 			break;
 		// Invalid colour type
 		default:
@@ -312,15 +312,15 @@ namespace ImageLibrary {
 			input.erase(input.begin());
 
 			// TODO: Check performance impact of this for larger images
-			for (uint32_t x = 0; x < m_width * std::ceil(m_bitsPerPixel / 8); x++) {
+			for (uint32_t x = 0; x < m_width * m_bytesPerPixel; x++) {
 				uint8_t currentByte;
 
-				bool firstPixel = (std::floor(x / std::ceil(m_bitsPerPixel / 8)) == 0 ? true : false);
+				bool firstPixel = (std::floor(x / m_bytesPerPixel) == 0 ? true : false);
 				bool firstScanline = (y == 0 ? true : false);
 
-				uint8_t aByte = (firstPixel ? 0 : output[output.size() - std::ceil(m_bitsPerPixel / 8)]);
-				uint8_t bByte = (firstScanline ? 0 : output[output.size() - std::ceil((m_bitsPerPixel * m_width) / 8)]);
-				uint8_t cByte = (firstPixel || firstScanline ? 0 : output[output.size() - std::ceil((m_bitsPerPixel * (m_width + 1)) / 8)]);
+				uint8_t aByte = (firstPixel ? 0 : output[output.size() - m_bytesPerPixel]);
+				uint8_t bByte = (firstScanline ? 0 : output[output.size() - m_bytesPerPixel * m_width]);
+				uint8_t cByte = (firstPixel || firstScanline ? 0 : output[output.size() - m_bytesPerPixel * (m_width + 1)]);
 
 				switch (filterType) {
 					// None
