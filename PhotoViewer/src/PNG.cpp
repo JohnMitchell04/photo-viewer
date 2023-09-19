@@ -197,35 +197,35 @@ namespace ImageLibrary {
 			if (m_bitDepth != 1 && m_bitDepth != 2 && m_bitDepth != 4 && m_bitDepth != 8 && m_bitDepth != 16) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
+			m_bitsPerPixel = m_bitDepth;
 			break;
 		// True colour
 		case 2:
 			if (m_bitDepth != 8 && m_bitDepth != 16) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
-			m_nBytesPerPixel = 3 * (m_bitDepth / 8.0);
+			m_bitsPerPixel = 3 * m_bitDepth;
 			break;
 		// Indexed Colour
 		case 3:
 			if (m_bitDepth != 1 && m_bitDepth != 2 && m_bitDepth != 4 && m_bitDepth != 8) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
-			// Addition of alpha channel is handled if ancilliary chunk is encountered
-			m_nBytesPerPixel = 3 * 8;
+			m_bitsPerPixel = m_bitDepth;
 			break;
 		// Greyscale alpha
 		case 4:
 			if (m_bitDepth != 8 && m_bitDepth != 16) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
-			m_nBytesPerPixel = 4 * (m_bitDepth / 8.0);
+			m_bitsPerPixel = 2 * m_bitDepth;
 			break;
 		// True colour alpha
 		case 6:
 			if (m_bitDepth != 8 && m_bitDepth != 16) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
-			m_nBytesPerPixel = 4 * (m_bitDepth / 8.0);
+			m_bitsPerPixel = 4 * m_bitDepth;
 			break;
 		// Invalid colour type
 		default:
@@ -288,23 +288,8 @@ namespace ImageLibrary {
 	std::vector<uint8_t> PNG::UnfilterData(std::vector<uint8_t>& input) {
 		std::vector<uint8_t> output;
 
-		// Define functors for use
-		auto average = [this](uint32_t x, std::vector<uint8_t>& output) -> uint8_t {
-			// Can't get preceding byte if first pixel
-			uint8_t aByte = (std::floor(x / m_nBytesPerPixel) == 0 ? 0 : output[output.size() - m_nBytesPerPixel]);
-			// Can't get up byte if first scanline
-			uint8_t bByte = (std::floor(x / (m_nBytesPerPixel * m_width)) ? 0 : output[output.size() - m_nBytesPerPixel * m_width]);
-			return std::floor((aByte + bByte) / 2);
-		};
-
-		auto paeth = [this](uint32_t x, std::vector<uint8_t>& output) -> uint8_t {
-			// Can't get preceding byte if first pixel
-			uint8_t aByte = (std::floor(x / m_nBytesPerPixel) == 0 ? 0 : output[output.size() - m_nBytesPerPixel]);
-			// Can't get up byte if first scanline
-			uint8_t bByte = (std::floor(x / (m_nBytesPerPixel * m_width)) ? 0 : output[output.size() - m_nBytesPerPixel * m_width]);
-			// Can't get preceding up byte if first pixel or scanline
-			uint8_t cByte = (std::floor(x / m_nBytesPerPixel) == 0 || std::floor(x / (m_nBytesPerPixel * m_width))) ? 0 : output[output.size() - m_nBytesPerPixel * (m_width + 1)];
-
+		// Define paeth functor for use
+		auto paeth = [](uint8_t aByte, uint8_t bByte, uint8_t cByte) -> uint8_t {
 			// Perform paeth
 			uint8_t result;
 			int p = aByte + bByte - cByte;
@@ -327,8 +312,15 @@ namespace ImageLibrary {
 			input.erase(input.begin());
 
 			// TODO: Check performance impact of this for larger images
-			for (uint32_t x = 0; x < m_width * m_nBytesPerPixel; x++) {
+			for (uint32_t x = 0; x < m_width * std::ceil(m_bitsPerPixel / 8); x++) {
 				uint8_t currentByte;
+
+				bool firstPixel = (std::floor(x / std::ceil(m_bitsPerPixel / 8)) == 0 ? true : false);
+				bool firstScanline = (y == 0 ? true : false);
+
+				uint8_t aByte = (firstPixel ? 0 : output[output.size() - std::ceil(m_bitsPerPixel / 8)]);
+				uint8_t bByte = (firstScanline ? 0 : output[output.size() - std::ceil((m_bitsPerPixel * m_width) / 8)]);
+				uint8_t cByte = (firstPixel || firstScanline ? 0 : output[output.size() - std::ceil((m_bitsPerPixel * (m_width + 1)) / 8)]);
 
 				switch (filterType) {
 					// None
@@ -338,20 +330,20 @@ namespace ImageLibrary {
 					// Sub
 				case 1:
 					// Can't get preceding byte if first pixel
-					currentByte = input[0] + (std::floor(x / m_nBytesPerPixel) == 0 ? 0 : output[output.size() - m_nBytesPerPixel]);
+					currentByte = input[0] + aByte;
 					break;
 					// Up
 				case 2:
 					// Can't get up byte if first scanline
-					currentByte = input[0] + (std::floor(x / (m_nBytesPerPixel * m_width)) ? 0 : output[output.size() - m_nBytesPerPixel * m_width]);
+					currentByte = input[0] + bByte;
 					break;
 					// Average
 				case 3:
-					currentByte = input[0] + average(x, output);
+					currentByte = input[0] + std::floor((aByte + bByte) / 2);
 					break;
 					// Paeth
 				case 4:
-					currentByte = input[0] + paeth(x, output);
+					currentByte = input[0] + paeth(aByte, bByte, cByte);
 					break;
 					// Invalid filter type type
 				default:
@@ -394,20 +386,40 @@ namespace ImageLibrary {
 			break;
 			// Indexed colour
 		case 3:
-			m_pixelFormat = (m_nBytesPerPixel == 4 ? Utils::RGB8 : Utils::RGBA8);
+			// TODO: Fix
+			m_pixelFormat = (m_bitsPerPixel == 4 ? Utils::RGB8 : Utils::RGBA8);
 			break;
 			// Greyscale with alpha
 		case 4:
-			[[fallthrough]]
+			[[fallthrough]];
 			// True colour with alpha
 		case 6:
 			m_pixelFormat = (m_bitDepth == 8 ? Utils::RGBA8 : Utils::RGBA16);
 			break;
 		}
 
-		// Consume input to create image data
-		for (uint32_t y = 0; y < m_height; y++) {
-			std::copy(input.begin() + y * m_width * m_nBytesPerPixel, input.begin() + (y + 1) * m_width * m_nBytesPerPixel, std::back_inserter(m_imageData));
+		// If true colour type data can be copied as is
+		if (m_colourType == 2 || m_colourType == 6) {
+			std::copy(input.begin(), input.end(), std::back_inserter(m_imageData));
+		}
+		// If indexed colour substitute pallete values in
+		else if (m_colourType == 3) {
+			// TODO: Implement
+		}
+		// Normal greyscale can also be handled here when decisions are fully made
+		else if (m_colourType == 4) {
+			for (uint32_t i = 0; i < m_width * m_height; i++) {
+				// Add greyscale 3 times for individual RGB components
+				for (int i = 0; i < 3; i++) {
+					m_imageData.push_back(input[0]);
+				}
+
+				// Consume greyscale value
+				input.erase(input.begin());
+				// Add alpha value and consume
+				m_imageData.push_back(input[0]);
+				input.erase(input.begin());
+			}
 		}
 
 		input.clear();
