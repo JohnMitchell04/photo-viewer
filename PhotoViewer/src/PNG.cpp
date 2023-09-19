@@ -378,7 +378,7 @@ namespace ImageLibrary {
 		switch (m_colourType) {
 			// Greyscale
 		case 0:
-			// TODO: Implement
+			m_pixelFormat = Utils::RGB8;
 			break;
 			// True colour
 		case 2:
@@ -386,8 +386,8 @@ namespace ImageLibrary {
 			break;
 			// Indexed colour
 		case 3:
-			// TODO: Fix
-			m_pixelFormat = (m_bitsPerPixel == 4 ? Utils::RGB8 : Utils::RGBA8);
+			// Check for alpha channel
+			m_pixelFormat = (m_indexedAlpha ? Utils::RGBA8 : Utils::RGB8);
 			break;
 			// Greyscale with alpha
 		case 4:

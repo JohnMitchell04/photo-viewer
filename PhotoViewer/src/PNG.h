@@ -38,5 +38,6 @@ namespace ImageLibrary {
 		uint8_t m_filterMethod;
 		uint8_t m_interlaceMethod;
 		std::vector<uint8_t> m_compressedData;
+		bool m_indexedAlpha = false;
 	};
 }
