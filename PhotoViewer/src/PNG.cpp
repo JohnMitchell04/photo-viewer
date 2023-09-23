@@ -197,7 +197,7 @@ namespace ImageLibrary {
 			if (m_bitDepth != 1 && m_bitDepth != 2 && m_bitDepth != 4 && m_bitDepth != 8 && m_bitDepth != 16) {
 				throw new std::runtime_error("Error: Invalid colour type and bit depth combination");
 			}
-			m_bytesPerPixel = std::ceil(m_bitDepth / 8);
+			m_bytesPerPixel = (m_bitDepth == 16 ? 2 : 1);
 			break;
 		// True colour
 		case 2:
@@ -312,15 +312,17 @@ namespace ImageLibrary {
 			input.erase(input.begin());
 
 			// TODO: Check performance impact of this for larger images
-			for (uint32_t x = 0; x < m_width * m_bytesPerPixel; x++) {
+			// Ensure loop executes correctly for sub byte size data
+			int lineWidth = (m_bytesPerPixel == 1 ? std::round(m_width * m_bitDepth / 8.0) : m_bytesPerPixel * m_width);
+			for (uint32_t x = 0; x < lineWidth; x++) {
 				uint8_t currentByte;
 
 				bool firstPixel = (std::floor(x / m_bytesPerPixel) == 0 ? true : false);
 				bool firstScanline = (y == 0 ? true : false);
 
 				uint8_t aByte = (firstPixel ? 0 : output[output.size() - m_bytesPerPixel]);
-				uint8_t bByte = (firstScanline ? 0 : output[output.size() - m_bytesPerPixel * m_width]);
-				uint8_t cByte = (firstPixel || firstScanline ? 0 : output[output.size() - m_bytesPerPixel * (m_width + 1)]);
+				uint8_t bByte = (firstScanline ? 0 : output[output.size() - lineWidth]);
+				uint8_t cByte = (firstPixel || firstScanline ? 0 : output[output.size() - lineWidth - m_bytesPerPixel]);
 
 				switch (filterType) {
 					// None
@@ -374,9 +376,6 @@ namespace ImageLibrary {
 	}
 
 	void PNG::ParsePixels(std::vector<uint8_t>& input) {
-		// TODO: Decide how to deal with pixels
-		// Thinking of having raw pixel data for vulkan operations etc. and a pixel struct for greater abstraction
-
 		// Select pixel format
 		switch (m_colourType) {
 			// Greyscale
@@ -401,6 +400,7 @@ namespace ImageLibrary {
 			break;
 		}
 
+		// TODO: Re-Write this is very messy
 		// If true colour type data can be copied as is accounting for endianess
 		if (m_colourType == 2 || m_colourType == 6) {
 			// If using bit depth equal to one byte or on big endian system, copy as is
@@ -423,6 +423,7 @@ namespace ImageLibrary {
 					m_imageData.push_back(flipped >> 8);
 					m_imageData.push_back(flipped);
 
+					// Consume
 					input.erase(input.begin(), input.begin() + 2);
 				}
 			}
@@ -433,19 +434,105 @@ namespace ImageLibrary {
 		}
 		// If greyscale with alpha copy value for each colour component and add alpha
 		else if (m_colourType == 4) {
-			for (uint32_t i = 0; i < m_width * m_height; i++) {
-				for (int j = 0; j < 3; j++) {
-					std::copy(input.begin(), input.begin() + (m_bitDepth / 8), std::back_inserter(m_imageData));
+			if (m_bitDepth == 8 || (m_bitDepth == 16 && std::endian::native == std::endian::big)) {
+				for (uint32_t i = 0; i < m_width * m_height; i++) {
+					// Copy greyscale value 3 times
+					for (int j = 0; j < 3; j++) {
+						std::copy(input.begin(), input.begin() + (m_bitDepth == 8 ? 1 : 2), std::back_inserter(m_imageData));
+					}
+
+					// Erase greyscale value
+					input.erase(input.begin(), input.begin() + (m_bitDepth == 8 ? 1 : 2));
+
+					// Consume alpha
+					std::copy(input.begin(), input.begin() + (m_bitDepth == 8 ? 1 : 2), std::back_inserter(m_imageData));
+					input.erase(input.begin(), input.begin() + (m_bitDepth == 8 ? 1 : 2));
 				}
+			}
+			else {
+				for (uint32_t i = 0; i < m_width * m_height; i++) {
+					// Extract value
+					uint16_t output;
+					Utils::ExtractBigEndian(output, input.data());
 
-				// Copy alpha value
-				std::copy(input.begin() + (m_bitDepth / 8), input.begin() + 2 * (m_bitDepth / 8), std::back_inserter(m_imageData));
+					// Flip endianess
+					uint16_t flipped;
+					Utils::FlipEndian(flipped, output);
 
-				// Consume pixel data
-				input.erase(input.begin(), input.begin() + 2 * (m_bitDepth / 8));
+					// Copy greyscale value 3 times
+					for (int j = 0; j < 3; j++) {
+						m_imageData.push_back(flipped >> 8);
+						m_imageData.push_back(flipped);
+					}
+
+					// Consume
+					input.erase(input.begin(), input.begin() + 2);
+
+					// Copy alpha value
+					Utils::ExtractBigEndian(output, input.data());
+
+					// Flip endianess
+					Utils::FlipEndian(flipped, output);
+
+					// Copy
+					m_imageData.push_back(flipped >> 8);
+					m_imageData.push_back(flipped);
+
+					// Consume
+					input.erase(input.begin(), input.begin() + 2);
+				}
 			}
 		}
+		// If greyscale, extract value and copy for each colour component
+		else {
+			if (m_bitDepth == 16) {
+				for (uint32_t i = 0; i < m_width * m_height; i++) {
+					// Extract value
+					uint16_t output;
+					Utils::ExtractBigEndian(output, input.data());
 
+					// Flip endianess
+					uint16_t flipped;
+					Utils::FlipEndian(flipped, output);
+
+					// Copy greyscale value 3 times
+					for (int j = 0; j < 3; j++) {
+						m_imageData.push_back(flipped >> 8);
+						m_imageData.push_back(flipped);
+					}
+
+					// Consume
+					input.erase(input.begin(), input.begin() + 2);
+				}
+			}
+			else {
+				for (uint32_t i = 0; i < input.size(); i++) {
+					// Loop byte for number of values
+					for (int j = 0; j < 8 / m_bitDepth; j++) {
+						// Extract value
+						uint8_t value = 0;
+						uint8_t mask = 0;
+						for (int k = 0; k < m_bitDepth; k++) {
+							mask |= 128 >> (k + j * m_bitDepth);
+						}
+						value = (mask & input[i]) >> (((8 / m_bitDepth) - j - 1) * m_bitDepth);
+
+						// Copy value for each component
+						for (int k = 0; k < 3; k++) {
+							m_imageData.push_back(value);
+						}
+					}
+				}
+
+				input.clear();
+
+				// Normalise values to 256 range
+				if (m_bitDepth != 8) {
+					int maxVal = std::pow(2, m_bitDepth) - 1;
+					std::for_each(m_imageData.begin(), m_imageData.end(), [maxVal](uint8_t& val) { val = std::round(((double)val / maxVal) * 255); });
+				}
+			}
+		}
 		// Shrink input to 0
 		input.shrink_to_fit();
 	}

@@ -105,26 +105,9 @@ namespace ImageLibrary {
 	}
 
 	void Image::SetData() {
-		// Get image format size
-		uint8_t pixelSize = 0;
-		switch (m_pixelFormat) {
-		case Utils::RGB8:
-			pixelSize = 3;
-			break;
-		case Utils::RGBA8:
-			pixelSize = 4;
-			break;
-		case Utils::RGB16:
-			pixelSize = 6;
-			break;
-		case Utils::RGBA16:
-			pixelSize = 8;
-			break;
-		}
-
 		// Get necessary information
 		VkDevice device = Walnut::Application::GetDevice();
-		size_t upload_size = m_width * m_height * pixelSize;
+		size_t upload_size = m_width * m_height * GetImageFormatBytes();
 		VkResult err;
 
 		if (!m_stagingBuffer)
@@ -256,9 +239,23 @@ namespace ImageLibrary {
 		}
 	}
 
+	int Image::GetImageFormatBytes() {
+		switch (m_pixelFormat) {
+		case Utils::RGB8:
+			return 3;
+		case Utils::RGBA8:
+			return 4;
+		case Utils::RGB16:
+			return 6;
+		case Utils::RGBA16:
+			return 8;
+		}
+	}
+
 	VkImageCreateInfo Image::AddAlphaChannel() {
+		int pixelSize = GetImageFormatBytes();
 		for (uint32_t i = 0; i < m_width * m_height; i++) {
-			m_imageData.insert(m_imageData.begin() + (i * (m_bytesPerPixel + m_bytesPerPixel / 3)) + m_bytesPerPixel, m_bytesPerPixel / 3, 0xff);
+			m_imageData.insert(m_imageData.begin() + (i * (pixelSize + pixelSize / 3)) + pixelSize, pixelSize / 3, 0xff);
 		}
 
 		VkFormat imageFormat;
