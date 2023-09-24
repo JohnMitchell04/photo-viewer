@@ -380,7 +380,7 @@ namespace ImageLibrary {
 		switch (m_colourType) {
 			// Greyscale
 		case 0:
-			m_pixelFormat = Utils::RGB8;
+			m_pixelFormat = (m_bitDepth <= 8 ? Utils::RGB8 : Utils::RGB16);
 			break;
 			// True colour
 		case 2:
@@ -400,17 +400,19 @@ namespace ImageLibrary {
 			break;
 		}
 
-		// TODO: Re-Write this is very messy
-		// If true colour type data can be copied as is accounting for endianess
-		if (m_colourType == 2 || m_colourType == 6) {
-			// If using bit depth equal to one byte or on big endian system, copy as is
-			if (m_bitDepth == 8 || (m_bitDepth == 16 && std::endian::native == std::endian::big)) {
-				std::copy(input.begin(), input.end(), std::back_inserter(m_imageData));
-				input.clear();
-			}
-			// Otherwise perform endianess conversion
-			else {
-				for (uint32_t i = 0; i < m_width * m_height * (m_bytesPerPixel / 2); i++) {
+		while (input.size() > 0) {
+			switch (m_colourType) {
+				// Truecolour
+			case 2:
+				[[fallthrough]];
+				// Truecolour with alpha
+			case 6:
+				// If using bit depth equal to one byte or on big endian system, copy as is
+				if (m_bitDepth == 8 || (m_bitDepth == 16 && std::endian::native == std::endian::big)) {
+					std::copy(input.begin(), input.end(), std::back_inserter(m_imageData));
+					input.clear();
+				}
+				else {
 					// Extract value
 					uint16_t output;
 					Utils::ExtractBigEndian(output, input.data());
@@ -426,67 +428,42 @@ namespace ImageLibrary {
 					// Consume
 					input.erase(input.begin(), input.begin() + 2);
 				}
-			}
-		}
-		// If indexed colour substitute pallete values in
-		else if (m_colourType == 3) {
-			// TODO: Implement
-		}
-		// If greyscale with alpha copy value for each colour component and add alpha
-		else if (m_colourType == 4) {
-			if (m_bitDepth == 8 || (m_bitDepth == 16 && std::endian::native == std::endian::big)) {
-				for (uint32_t i = 0; i < m_width * m_height; i++) {
-					// Copy greyscale value 3 times
-					for (int j = 0; j < 3; j++) {
+				break;
+				// Indexed colour
+			case 3:
+				// TODO: Implement
+				break;
+				// Greyscale with alpha
+			case 4:
+				// Copy value for each component
+				for (int j = 0; j < 4; j++) {
+					if (m_bitDepth == 8 || (m_bitDepth == 16 && std::endian::native == std::endian::big)) {
 						std::copy(input.begin(), input.begin() + (m_bitDepth == 8 ? 1 : 2), std::back_inserter(m_imageData));
 					}
+					else {
+						// Extract value
+						uint16_t output;
+						Utils::ExtractBigEndian(output, input.data());
 
-					// Erase greyscale value
-					input.erase(input.begin(), input.begin() + (m_bitDepth == 8 ? 1 : 2));
+						// Flip endianess
+						uint16_t flipped;
+						Utils::FlipEndian(flipped, output);
 
-					// Consume alpha
-					std::copy(input.begin(), input.begin() + (m_bitDepth == 8 ? 1 : 2), std::back_inserter(m_imageData));
-					input.erase(input.begin(), input.begin() + (m_bitDepth == 8 ? 1 : 2));
-				}
-			}
-			else {
-				for (uint32_t i = 0; i < m_width * m_height; i++) {
-					// Extract value
-					uint16_t output;
-					Utils::ExtractBigEndian(output, input.data());
-
-					// Flip endianess
-					uint16_t flipped;
-					Utils::FlipEndian(flipped, output);
-
-					// Copy greyscale value 3 times
-					for (int j = 0; j < 3; j++) {
 						m_imageData.push_back(flipped >> 8);
 						m_imageData.push_back(flipped);
 					}
 
-					// Consume
-					input.erase(input.begin(), input.begin() + 2);
-
-					// Copy alpha value
-					Utils::ExtractBigEndian(output, input.data());
-
-					// Flip endianess
-					Utils::FlipEndian(flipped, output);
-
-					// Copy
-					m_imageData.push_back(flipped >> 8);
-					m_imageData.push_back(flipped);
-
-					// Consume
-					input.erase(input.begin(), input.begin() + 2);
+					// Consume greyscale when done
+					if (j == 2 || j == 3) {
+						input.erase(input.begin(), input.begin() + (m_bitDepth == 8 ? 1 : 2));
+					}
 				}
-			}
-		}
-		// If greyscale, extract value and copy for each colour component
-		else {
-			if (m_bitDepth == 16) {
-				for (uint32_t i = 0; i < m_width * m_height; i++) {
+				break;
+				// Greyscale
+			case 0:
+				int maxVal = std::pow(2, m_bitDepth) - 1;
+
+				if (m_bitDepth == 16) {
 					// Extract value
 					uint16_t output;
 					Utils::ExtractBigEndian(output, input.data());
@@ -494,6 +471,9 @@ namespace ImageLibrary {
 					// Flip endianess
 					uint16_t flipped;
 					Utils::FlipEndian(flipped, output);
+
+					// Normalise value
+					flipped = std::round(((double)flipped / maxVal) * UINT16_MAX);
 
 					// Copy greyscale value 3 times
 					for (int j = 0; j < 3; j++) {
@@ -504,9 +484,7 @@ namespace ImageLibrary {
 					// Consume
 					input.erase(input.begin(), input.begin() + 2);
 				}
-			}
-			else {
-				for (uint32_t i = 0; i < input.size(); i++) {
+				else {
 					// Loop byte for number of values
 					for (int j = 0; j < 8 / m_bitDepth; j++) {
 						// Extract value
@@ -515,24 +493,22 @@ namespace ImageLibrary {
 						for (int k = 0; k < m_bitDepth; k++) {
 							mask |= 128 >> (k + j * m_bitDepth);
 						}
-						value = (mask & input[i]) >> (((8 / m_bitDepth) - j - 1) * m_bitDepth);
+						value = (mask & input[0]) >> (((8 / m_bitDepth) - j - 1) * m_bitDepth);
+
+						// Normalise value
+						value = std::round(((double)value / maxVal) * UINT8_MAX);
 
 						// Copy value for each component
 						for (int k = 0; k < 3; k++) {
 							m_imageData.push_back(value);
 						}
 					}
-				}
 
-				input.clear();
-
-				// Normalise values to 256 range
-				if (m_bitDepth != 8) {
-					int maxVal = std::pow(2, m_bitDepth) - 1;
-					std::for_each(m_imageData.begin(), m_imageData.end(), [maxVal](uint8_t& val) { val = std::round(((double)val / maxVal) * 255); });
+					input.erase(input.begin());
 				}
 			}
 		}
+
 		// Shrink input to 0
 		input.shrink_to_fit();
 	}
