@@ -108,19 +108,24 @@ namespace ImageLibrary {
 			if (chunkSpecifierE == Utils::PNG::INVALID) { throw new std::runtime_error("Error: Encountered chunk is invalid"); }
 
 			// Ensure the correct chunk is encountered first
-			if (chunksIndex == 0 && chunkSpecifier != "IHDR") { throw new std::runtime_error("Error: Chunk order is invalid"); }
+			if (chunksIndex == 0 && chunkSpecifierE != Utils::PNG::IHDR) { throw new std::runtime_error("Error: Chunk order is invalid - IHDR is not first"); }
 
 			// Check IDAT chunks are consecutive
 			if (encounteredIDAT && chunkSpecifierE == Utils::PNG::IDAT) {
-				if (encounteredChunks.back().identifier != Utils::PNG::IDAT) { throw new std::runtime_error("Error: Chunk order is invalid"); }
+				if (encounteredChunks.back().identifier != Utils::PNG::IDAT) { throw new std::runtime_error("Error: Chunk order is invalid - IDAT are not consecutive"); }
 			}
 
-			// TODO: Deal with PLTE chunk
 			switch (chunkSpecifierE) {
 			case Utils::PNG::IHDR:
+				CheckChunkOccurence(encounteredChunks, Utils::PNG::IHDR, 0);
 				ParseIHDR();
 				break;
+			case Utils::PNG::PLTE:
+				CheckChunkOccurence(encounteredChunks, Utils::PNG::PLTE, 0);
+				ParsePLTE(length);
+				break;
 			case Utils::PNG::IDAT:
+				if (m_colourType == 3 && !CheckChunkOccurence(encounteredChunks, Utils::PNG::PLTE, 0)) { throw new std::runtime_error("Error: Chunk order is invalid - PLTE required beore IDAT"); }
 				// Consume IDAT data into compressed data
 				encounteredIDAT = true;
 				std::copy(m_rawData.begin(), m_rawData.begin() + length, std::back_inserter(m_compressedData));
@@ -140,6 +145,11 @@ namespace ImageLibrary {
 			encounteredChunks.push_back(Utils::PNG::Chunk{ .identifier = chunkSpecifierE, .position = chunksIndex });
 			chunksIndex++;
 		} while (encounteredChunks.back().identifier != Utils::PNG::IEND);
+	}
+
+	bool PNG::CheckChunkOccurence(const std::vector<Utils::PNG::Chunk>& encounteredChunks, Utils::PNG::ChunkIdentifier chunk, int number) {
+		int count = std::count_if(encounteredChunks.begin(), encounteredChunks.end(), [chunk](Utils::PNG::Chunk val) { return val.identifier == chunk; });
+		return (count == number ? true : false);
 	}
 
 	void PNG::CheckCRC(uint32_t length) {
@@ -242,6 +252,14 @@ namespace ImageLibrary {
 		if (m_interlaceMethod != 0 && m_interlaceMethod != 1) { throw new std::runtime_error("Error: Incompatible interlace method"); }
 	}
 
+	void PNG::ParsePLTE(uint32_t length) {
+		// Do some checking that this chunk is valid and should be present
+		if (m_colourType == 3 && length % 3 != 0) { throw new std::runtime_error("Error: PLTE chunk is invalid"); }
+		else if (length % 3 != 0) { return; }
+
+
+	}
+
 	std::vector<uint8_t> PNG::DecompressData() {
 		std::vector<uint8_t> output;
 
@@ -252,7 +270,7 @@ namespace ImageLibrary {
 		infStream.zfree = Z_NULL;
 		infStream.opaque = Z_NULL;
 		infStream.next_in = m_compressedData.data();
-		infStream.avail_in = m_compressedData.size();
+		infStream.avail_in = (uInt)m_compressedData.size();
 
 		// Initialise the infaltion
 		err = inflateInit(&infStream);
@@ -266,7 +284,7 @@ namespace ImageLibrary {
 			std::vector<uint8_t> tempOutput;
 			tempOutput.resize(65536);
 			infStream.next_out = tempOutput.data();
-			infStream.avail_out = tempOutput.size();
+			infStream.avail_out = (uInt)tempOutput.size();
 
 			// Perform decompression
 			err = inflate(&infStream, Z_SYNC_FLUSH);
@@ -313,7 +331,7 @@ namespace ImageLibrary {
 
 			// TODO: Check performance impact of this for larger images
 			// Ensure loop executes correctly for sub byte size data
-			int lineWidth = (m_bytesPerPixel == 1 ? std::round(m_width * m_bitDepth / 8.0) : m_bytesPerPixel * m_width);
+			uint32_t lineWidth = (m_bytesPerPixel == 1 ? (uint32_t)std::round(m_width * m_bitDepth / 8.0) : m_bytesPerPixel * m_width);
 			for (uint32_t x = 0; x < lineWidth; x++) {
 				uint8_t currentByte;
 
@@ -341,7 +359,7 @@ namespace ImageLibrary {
 					break;
 					// Average
 				case 3:
-					currentByte = input[0] + std::floor((aByte + bByte) / 2);
+					currentByte = input[0] + (uint8_t)std::floor((aByte + bByte) / 2);
 					break;
 					// Paeth
 				case 4:
@@ -461,7 +479,7 @@ namespace ImageLibrary {
 				break;
 				// Greyscale
 			case 0:
-				int maxVal = std::pow(2, m_bitDepth) - 1;
+				int maxVal = (int)std::pow(2, m_bitDepth) - 1;
 
 				if (m_bitDepth == 16) {
 					// Extract value
@@ -473,7 +491,7 @@ namespace ImageLibrary {
 					Utils::FlipEndian(flipped, output);
 
 					// Normalise value
-					flipped = std::round(((double)flipped / maxVal) * UINT16_MAX);
+					flipped = (uint16_t)std::round(((double)flipped / maxVal) * UINT16_MAX);
 
 					// Copy greyscale value 3 times
 					for (int j = 0; j < 3; j++) {
@@ -496,7 +514,7 @@ namespace ImageLibrary {
 						value = (mask & input[0]) >> (((8 / m_bitDepth) - j - 1) * m_bitDepth);
 
 						// Normalise value
-						value = std::round(((double)value / maxVal) * UINT8_MAX);
+						value = (uint8_t)std::round(((double)value / maxVal) * UINT8_MAX);
 
 						// Copy value for each component
 						for (int k = 0; k < 3; k++) {

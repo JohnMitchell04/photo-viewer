@@ -22,8 +22,10 @@ namespace ImageLibrary {
 		void ReadRawData();
 		void ParseSignature();
 		void ParseChunks();
+		bool CheckChunkOccurence(const std::vector<Utils::PNG::Chunk>& encounteredChunks, Utils::PNG::ChunkIdentifier chunk, int number);
 		void CheckCRC(uint32_t length);
 		void ParseIHDR();
+		void ParsePLTE(uint32_t length);
 		std::vector<uint8_t> DecompressData();
 		std::vector<uint8_t> UnfilterData(std::vector<uint8_t>& input);
 		std::vector<uint8_t> DeinterlaceData(std::vector<uint8_t>& input);
@@ -37,6 +39,7 @@ namespace ImageLibrary {
 		uint8_t m_filterMethod;
 		uint8_t m_interlaceMethod;
 		std::vector<uint8_t> m_compressedData;
+		std::vector<uint8_t> m_PLTEData;
 		bool m_indexedAlpha = false;
 	};
 }
