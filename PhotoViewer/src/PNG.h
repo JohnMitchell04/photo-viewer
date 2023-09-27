@@ -35,7 +35,7 @@ namespace ImageLibrary {
 		uint8_t m_filterMethod;
 		uint8_t m_interlaceMethod;
 		std::vector<uint8_t> m_compressedData;
-		std::vector<uint8_t> m_PLTEData;
+		std::vector<Utils::Pixel> m_PLTEData;
 		bool m_indexedAlpha = false;
 		int m_bytesPerPixel;
 	};

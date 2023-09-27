@@ -103,11 +103,12 @@ namespace ImageLibrary {
 				ParseIHDR();
 				break;
 			case Utils::PNG::PLTE:
+				if (m_colourType == 0 || m_colourType == 4) { throw new std::runtime_error("Error: PLTE chunk must not appear for his colour type"); }
 				CheckChunkOccurence(encounteredChunks, Utils::PNG::PLTE, 0);
 				ParsePLTE(length);
 				break;
 			case Utils::PNG::IDAT:
-				if (m_colourType == 3 && !CheckChunkOccurence(encounteredChunks, Utils::PNG::PLTE, 0)) { throw new std::runtime_error("Error: Chunk order is invalid - PLTE required before IDAT"); }
+				if (m_colourType == 3 && !CheckChunkOccurence(encounteredChunks, Utils::PNG::PLTE, 1)) { throw new std::runtime_error("Error: Chunk order is invalid - PLTE required before IDAT"); }
 				// Consume IDAT data into compressed data
 				encounteredIDAT = true;
 				std::copy(m_rawData.begin(), m_rawData.begin() + length, std::back_inserter(m_compressedData));
@@ -242,7 +243,21 @@ namespace ImageLibrary {
 		if (m_colourType == 3 && length % 3 != 0) { throw new std::runtime_error("Error: PLTE chunk is invalid"); }
 		else if (length % 3 != 0) { return; }
 
+		if ((length / 3) > std::pow(2, m_bitDepth)) { throw new std::runtime_error("Error: PLTE chunk is invalid"); }
 
+		// Copy pixel data
+		for (int i = 0; i < (length / 3); i++) {
+			Utils::Pixel pixel;
+
+			pixel.R = m_rawData[i * 3];
+			pixel.G = m_rawData[(i * 3) + 1];
+			pixel.B = m_rawData[(i * 3) + 2];
+
+			m_PLTEData.push_back(pixel);
+		}
+
+		// Erase rest of chunk
+		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + length + 4);
 	}
 
 	std::vector<uint8_t> PNG::DecompressData() {
@@ -428,9 +443,28 @@ namespace ImageLibrary {
 				}
 				break;
 				// Indexed colour
-			case 3:
-				// TODO: Implement
+			case 3: {
+				// Construct mask
+				uint8_t mask = 0;
+				for (int i = 0; i < m_bitDepth; i++) {
+					mask |= 128 >> i;
+				}
+
+				// Extract index
+				uint8_t index = (mask & input[0]) >> (8 - m_bitDepth);
+
+				// Select pixel
+				pixel = m_PLTEData[index];
+
+				// Shift value for next extraction
+				input[0] <<= m_bitDepth;
+
+				// Erase value if needed
+				if ((i * m_bitDepth) % 8 == 0 && i != 0) {
+					input.erase(input.begin());
+				}
 				break;
+			}
 				// Greyscale
 			case 0:
 				if (m_bitDepth < 8) {
