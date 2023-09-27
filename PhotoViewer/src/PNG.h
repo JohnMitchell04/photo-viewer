@@ -1,8 +1,5 @@
 #pragma once
 
-#include <iostream>
-#include <fstream>
-#include <filesystem>
 #include <iterator>
 #include <ctype.h>
 #include <array>
@@ -19,7 +16,6 @@ namespace ImageLibrary {
 		void InitCRC();
 		void ReadFile();
 
-		void ReadRawData();
 		void ParseSignature();
 		void ParseChunks();
 		bool CheckChunkOccurence(const std::vector<Utils::PNG::Chunk>& encounteredChunks, Utils::PNG::ChunkIdentifier chunk, int number);
@@ -41,5 +37,6 @@ namespace ImageLibrary {
 		std::vector<uint8_t> m_compressedData;
 		std::vector<uint8_t> m_PLTEData;
 		bool m_indexedAlpha = false;
+		int m_bytesPerPixel;
 	};
 }

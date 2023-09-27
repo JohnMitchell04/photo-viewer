@@ -21,9 +21,6 @@ namespace ImageLibrary {
 	}
 
 	void PNG::ReadFile() {
-		// Read raw data from file
-		ReadRawData();
-
 		// Get and check the PNG signature
 		ParseSignature();
 
@@ -41,22 +38,6 @@ namespace ImageLibrary {
 
 		// Parse pixels
 		ParsePixels(interlacedData);
-	}
-
-	void PNG::ReadRawData() {
-		// Create input stream in binary mode
-		std::ifstream file;
-		file.open(m_filePath, std::ios_base::binary);
-		file.unsetf(std::ios_base::skipws);
-
-		if (file) {
-			// Get and reserve file size
-			uintmax_t size = std::filesystem::file_size(m_filePath);
-			m_rawData.reserve(size);
-
-			// Read file into vector
-			std::copy(std::istream_iterator<uint8_t>(file), std::istream_iterator<uint8_t>(), std::back_inserter(m_rawData));
-		}
 	}
 
 	void PNG::ParseSignature() {
@@ -83,7 +64,7 @@ namespace ImageLibrary {
 		do {
 			// Consume chunk length remembering it is big endian
 			uint32_t length;
-			Utils::ExtractBigEndian(length, m_rawData.data());
+			Utils::ExtractBigEndianBytes(length, m_rawData.data(), 4);
 			m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
 			// Check length is within standard
@@ -115,6 +96,7 @@ namespace ImageLibrary {
 				if (encounteredChunks.back().identifier != Utils::PNG::IDAT) { throw new std::runtime_error("Error: Chunk order is invalid - IDAT are not consecutive"); }
 			}
 
+			// TODO: Clean
 			switch (chunkSpecifierE) {
 			case Utils::PNG::IHDR:
 				CheckChunkOccurence(encounteredChunks, Utils::PNG::IHDR, 0);
@@ -125,7 +107,7 @@ namespace ImageLibrary {
 				ParsePLTE(length);
 				break;
 			case Utils::PNG::IDAT:
-				if (m_colourType == 3 && !CheckChunkOccurence(encounteredChunks, Utils::PNG::PLTE, 0)) { throw new std::runtime_error("Error: Chunk order is invalid - PLTE required beore IDAT"); }
+				if (m_colourType == 3 && !CheckChunkOccurence(encounteredChunks, Utils::PNG::PLTE, 0)) { throw new std::runtime_error("Error: Chunk order is invalid - PLTE required before IDAT"); }
 				// Consume IDAT data into compressed data
 				encounteredIDAT = true;
 				std::copy(m_rawData.begin(), m_rawData.begin() + length, std::back_inserter(m_compressedData));
@@ -157,7 +139,7 @@ namespace ImageLibrary {
 
 		// Get the CRC in the chunk remembering it is big endian
 		uint32_t chunkCRC;
-		Utils::ExtractBigEndian(chunkCRC, m_rawData.data() + 4 + length);
+		Utils::ExtractBigEndianBytes(chunkCRC, m_rawData.data() + 4 + length, 4);
 
 		// Calculate the expected CRC
 		uint32_t c = 0xffffffffL;
@@ -176,12 +158,15 @@ namespace ImageLibrary {
 
 	void PNG::ParseIHDR() {
 		// Consume width remembering it is big endian
-		Utils::ExtractBigEndian(m_width, m_rawData.data());
+		Utils::ExtractBigEndianBytes(m_width, m_rawData.data(), 4);
 		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
 
 		// Consume height remembering it is big endian
-		Utils::ExtractBigEndian(m_height, m_rawData.data());
+		Utils::ExtractBigEndianBytes(m_height, m_rawData.data(), 4);
 		m_rawData.erase(m_rawData.begin(), m_rawData.begin() + 4);
+
+		// Initialise pixel data
+		m_pixelData.resize(m_height, std::vector<Utils::Pixel>());
 
 		// Perform checks on dimensions
 		if (m_width > Utils::PNG_SPEC_MAX_DIMENSION || m_height > Utils::PNG_SPEC_MAX_DIMENSION || m_width < 0 || m_height < 0) {
@@ -418,114 +403,87 @@ namespace ImageLibrary {
 			break;
 		}
 
-		while (input.size() > 0) {
+		// Get number of bytes per channel so data can be copied correctly
+		int channelSize = Utils::GetChannelByteSize(m_pixelFormat);
+		for (uint32_t i = 0; i < m_width * m_height; i++) {
+			Utils::Pixel pixel;
 			switch (m_colourType) {
 				// Truecolour
 			case 2:
 				[[fallthrough]];
 				// Truecolour with alpha
 			case 6:
-				// If using bit depth equal to one byte or on big endian system, copy as is
-				if (m_bitDepth == 8 || (m_bitDepth == 16 && std::endian::native == std::endian::big)) {
-					std::copy(input.begin(), input.end(), std::back_inserter(m_imageData));
-					input.clear();
-				}
-				else {
-					// Extract value
-					uint16_t output;
-					Utils::ExtractBigEndian(output, input.data());
+				// Create pixel and copy and consume data in
+				Utils::ExtractBigEndianBytes(pixel.R, input.data(), channelSize);
+				input.erase(input.begin(), input.begin() + channelSize);
+				Utils::ExtractBigEndianBytes(pixel.G, input.data(), channelSize);
+				input.erase(input.begin(), input.begin() + channelSize);
+				Utils::ExtractBigEndianBytes(pixel.B, input.data(), channelSize);
+				input.erase(input.begin(), input.begin() + channelSize);
 
-					// Flip endianess
-					uint16_t flipped;
-					Utils::FlipEndian(flipped, output);
-
-					// Copy value to image data
-					m_imageData.push_back(flipped >> 8);
-					m_imageData.push_back(flipped);
-
-					// Consume
-					input.erase(input.begin(), input.begin() + 2);
+				// If alpha channel is present copy and consume data
+				if (Utils::HasAlphaChannel(m_pixelFormat)) {
+					Utils::ExtractBigEndianBytes(pixel.A, input.data(), channelSize);
+					input.erase(input.begin(), input.begin() + channelSize);
 				}
 				break;
 				// Indexed colour
 			case 3:
 				// TODO: Implement
 				break;
-				// Greyscale with alpha
-			case 4:
-				// Copy value for each component
-				for (int j = 0; j < 4; j++) {
-					if (m_bitDepth == 8 || (m_bitDepth == 16 && std::endian::native == std::endian::big)) {
-						std::copy(input.begin(), input.begin() + (m_bitDepth == 8 ? 1 : 2), std::back_inserter(m_imageData));
-					}
-					else {
-						// Extract value
-						uint16_t output;
-						Utils::ExtractBigEndian(output, input.data());
-
-						// Flip endianess
-						uint16_t flipped;
-						Utils::FlipEndian(flipped, output);
-
-						m_imageData.push_back(flipped >> 8);
-						m_imageData.push_back(flipped);
-					}
-
-					// Consume greyscale when done
-					if (j == 2 || j == 3) {
-						input.erase(input.begin(), input.begin() + (m_bitDepth == 8 ? 1 : 2));
-					}
-				}
-				break;
 				// Greyscale
 			case 0:
-				int maxVal = (int)std::pow(2, m_bitDepth) - 1;
+				if (m_bitDepth < 8) {
+					int maxVal = (int)std::pow(2, m_bitDepth) - 1;
 
-				if (m_bitDepth == 16) {
+					// Construct mask
+					uint8_t mask = 0;
+					for (int i = 0; i < m_bitDepth; i++) {
+						mask |= 128 >> i;
+					}
+
 					// Extract value
-					uint16_t output;
-					Utils::ExtractBigEndian(output, input.data());
-
-					// Flip endianess
-					uint16_t flipped;
-					Utils::FlipEndian(flipped, output);
+					uint8_t value = (mask & input[0]) >> (8 - m_bitDepth);
 
 					// Normalise value
-					flipped = (uint16_t)std::round(((double)flipped / maxVal) * UINT16_MAX);
+					value = (uint8_t)std::round(((double)value / maxVal) * UINT8_MAX);
 
-					// Copy greyscale value 3 times
-					for (int j = 0; j < 3; j++) {
-						m_imageData.push_back(flipped >> 8);
-						m_imageData.push_back(flipped);
+					// Assign components
+					pixel.R = value;
+					pixel.G = value;
+					pixel.B = value;
+
+					// Shift value for next extraction
+					input[0] <<= m_bitDepth;
+
+					// Erase value if needed
+					if ((i * m_bitDepth) % 8 == 0 && i != 0) {
+						input.erase(input.begin());
 					}
-
-					// Consume
-					input.erase(input.begin(), input.begin() + 2);
+					break;
 				}
-				else {
-					// Loop byte for number of values
-					for (int j = 0; j < 8 / m_bitDepth; j++) {
-						// Extract value
-						uint8_t value = 0;
-						uint8_t mask = 0;
-						for (int k = 0; k < m_bitDepth; k++) {
-							mask |= 128 >> (k + j * m_bitDepth);
-						}
-						value = (mask & input[0]) >> (((8 / m_bitDepth) - j - 1) * m_bitDepth);
+				else { [[fallthrough]]; }
+				// Greyscale with alpha
+			case 4:
+				// Create pixel and copy and consume data in
+				Utils::ExtractBigEndianBytes(pixel.R, input.data(), channelSize);
+				input.erase(input.begin(), input.begin() + channelSize);
+				pixel.G = pixel.R;
+				pixel.B = pixel.R;
 
-						// Normalise value
-						value = (uint8_t)std::round(((double)value / maxVal) * UINT8_MAX);
-
-						// Copy value for each component
-						for (int k = 0; k < 3; k++) {
-							m_imageData.push_back(value);
-						}
-					}
-
-					input.erase(input.begin());
+				// If alpha channel is present copy and consume data
+				if (Utils::HasAlphaChannel(m_pixelFormat)) {
+					Utils::ExtractBigEndianBytes(pixel.A, input.data(), channelSize);
+					input.erase(input.begin(), input.begin() + channelSize);
 				}
+				break;
 			}
+
+			// Add pixel to data
+			m_pixelData[std::floor(i / m_width)].push_back(pixel);
 		}
+
+		input.clear();
 
 		// Shrink input to 0
 		input.shrink_to_fit();

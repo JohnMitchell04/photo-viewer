@@ -13,7 +13,7 @@ public:
 	{
 		ImGui::Begin("Control Panel");
 		if (ImGui::Button("Open")) {
-			m_loadedImage = std::make_unique<ImageLibrary::PNG>("C:\\Users\\johnr\\source\\repos\\photo-viewer\\PhotoViewer\\test\\basn0g16.png");
+			m_loadedImage = std::make_unique<ImageLibrary::PNG>("C:\\Users\\johnr\\source\\repos\\photo-viewer\\PhotoViewer\\test\\basn6a16.png");
 		}
 		ImGui::End();
 
