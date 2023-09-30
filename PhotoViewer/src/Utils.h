@@ -2,6 +2,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <stdexcept>
 
 namespace ImageLibrary {
 	namespace Utils {
@@ -23,23 +24,22 @@ namespace ImageLibrary {
 			INVALID
 		};
 
+		int GetPixelFormatByteSize(PixelFormat pixelFormat);
+		int GetChannelByteSize(PixelFormat pixelFormat);
+		bool HasAlphaChannel(PixelFormat pixelFormat);
+
 		// Pixel struct large enough to hold any pixel value
-		struct Pixel {
-			uint16_t R;
-			uint16_t G;
-			uint16_t B;
-			uint16_t A;
-		};
+		struct Pixel { uint16_t R = 0, G = 0, B = 0, A = 0; };
 
 		template <typename T>
 		concept IntegerType = std::is_integral<T>::value && !std::same_as<T, bool>;
 
 		template <IntegerType T>
-		void ExtractBigEndian(T& dest, uint8_t* src) {
-			int bytes = sizeof(T);
+		void ExtractBigEndianBytes(T& dest, uint8_t* src, int number) {
+			if (sizeof(dest) < number) { throw new std::invalid_argument("Error: Destination cannot hold number of bytes"); }
 			dest = 0;
-			for (int i = 0; i < bytes; i++) {
-				dest |= ((T)src[i] << (8 * (bytes - 1 - i)));
+			for (int i = 0; i < number; i++) {
+				dest |= ((T)src[i] << (8 * (number - 1 - i)));
 			}
 		}
 
@@ -48,10 +48,11 @@ namespace ImageLibrary {
 
 		template <EvenSizeIntegerType T>
 		void FlipEndian(T& dest, T& src) {
+			T temp = src;
 			dest = 0;
 			for (int i = 0; i < sizeof(T) / 2; i++) {
 				int shiftAmount = sizeof(T) * 8 - (i + 1) * 8;
-				dest |= (src << shiftAmount & 0xff << shiftAmount) | (src >> shiftAmount & (0xff << (sizeof(T) - 1) * 8) >> shiftAmount);
+				dest |= (temp << shiftAmount & 0xff << shiftAmount) | (temp >> shiftAmount & (0xff << (sizeof(T) - 1) * 8) >> shiftAmount);
 			}
 		}
 

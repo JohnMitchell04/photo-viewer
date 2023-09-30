@@ -3,6 +3,54 @@
 #include "Image.h"
 
 namespace ImageLibrary {
+	void Image::ReadRawData() {
+		// Create input stream in binary mode
+		std::ifstream file;
+		file.open(m_filePath, std::ios_base::binary);
+		file.unsetf(std::ios_base::skipws);
+
+		if (file) {
+			// Get and reserve file size
+			uintmax_t size = std::filesystem::file_size(m_filePath);
+			m_rawData.reserve(size);
+
+			// Read file into vector
+			std::copy(std::istream_iterator<uint8_t>(file), std::istream_iterator<uint8_t>(), std::back_inserter(m_rawData));
+		}
+	}
+
+	std::vector<uint8_t> Image::PixelDataToBuffer() {
+		int bytesPerPixel = Utils::GetPixelFormatByteSize(m_pixelFormat);
+		int channelDepth = Utils::GetChannelByteSize(m_pixelFormat);
+		std::vector<uint8_t> buffer(m_width * m_height * bytesPerPixel);
+
+		for (uint32_t y = 0; y < m_height; y++) {
+			for (uint32_t x = 0; x < m_width; x++) {
+				buffer[(y * m_width + x) * bytesPerPixel] = (uint8_t)m_pixelData[y][x].R;
+				buffer[(y * m_width + x) * bytesPerPixel + channelDepth] = (uint8_t)m_pixelData[y][x].G;
+				buffer[(y * m_width + x) * bytesPerPixel + 2 * channelDepth] = (uint8_t)m_pixelData[y][x].B;
+
+				// If format has 2 bytes per channel set data for it
+				if (channelDepth == 2) {
+					buffer[(y * m_width + x) * bytesPerPixel + 1] = m_pixelData[y][x].R >> 8;
+					buffer[(y * m_width + x) * bytesPerPixel + channelDepth + 1] = m_pixelData[y][x].G >> 8;
+					buffer[(y * m_width + x) * bytesPerPixel + 2 * channelDepth + 1] = m_pixelData[y][x].B >> 8;
+				}
+
+				if (Utils::HasAlphaChannel(m_pixelFormat)) {
+					buffer[(y * m_width + x) * bytesPerPixel + 3 * channelDepth] = (uint8_t)m_pixelData[y][x].A;
+
+					// If format has 2 bytes per channel set data for it
+					if (channelDepth == 2) {
+						buffer[(y * m_width + x) * bytesPerPixel + 3 * channelDepth + 1] = (uint8_t)(m_pixelData[y][x].A >> 8);
+					}
+				}
+			}
+		}
+
+		return buffer;
+	}
+
 	/*
 		Most code relating to Vulkan in this file was taken from Walnut created by Yan Chernovik
 		Accessible here: https://github.com/StudioCherno/Walnut
@@ -11,7 +59,7 @@ namespace ImageLibrary {
 		// Get necessary information
 		VkDevice device = Walnut::Application::GetDevice();
 		VkResult err;
-		VkFormat imageFormat = GetImageFormat();
+		VkFormat imageFormat = GetVulkanisedImageFormat();
 
 		// Create the Image
 		{
@@ -36,7 +84,7 @@ namespace ImageLibrary {
 			err = vkGetPhysicalDeviceImageFormatProperties(Walnut::Application::GetPhysicalDevice(), imageFormat, info.imageType, info.tiling, info.usage, info.flags, &check);
 			if (err == VK_ERROR_FORMAT_NOT_SUPPORTED) {
 				info = AddAlphaChannel();
-				imageFormat = GetImageFormat();
+				imageFormat = GetVulkanisedImageFormat();
 			}
 			else { check_vk_result(err); }
 
@@ -105,26 +153,9 @@ namespace ImageLibrary {
 	}
 
 	void Image::SetData() {
-		// Get image format size
-		uint8_t pixelSize = 0;
-		switch (m_pixelFormat) {
-		case Utils::RGB8:
-			pixelSize = 3;
-			break;
-		case Utils::RGBA8:
-			pixelSize = 4;
-			break;
-		case Utils::RGB16:
-			pixelSize = 6;
-			break;
-		case Utils::RGBA16:
-			pixelSize = 8;
-			break;
-		}
-
 		// Get necessary information
 		VkDevice device = Walnut::Application::GetDevice();
-		size_t upload_size = m_width * m_height * pixelSize;
+		size_t upload_size = m_width * m_height * GetPixelFormatByteSize(m_pixelFormat);
 		VkResult err;
 
 		if (!m_stagingBuffer)
@@ -172,7 +203,8 @@ namespace ImageLibrary {
 			check_vk_result(err);
 
 			// Copy image data into map
-			memcpy(map, m_imageData.data(), upload_size);
+			std::vector<uint8_t> buffer = PixelDataToBuffer();
+			memcpy(map, buffer.data(), upload_size);
 
 			// Create mapped memory information
 			VkMappedMemoryRange range[1] = {};
@@ -243,7 +275,7 @@ namespace ImageLibrary {
 		}
 	}
 
-	VkFormat Image::GetImageFormat() {
+	VkFormat Image::GetVulkanisedImageFormat() {
 		switch (m_pixelFormat) {
 		case Utils::RGB8:
 			return VK_FORMAT_R8G8B8_UNORM;
@@ -257,13 +289,13 @@ namespace ImageLibrary {
 	}
 
 	VkImageCreateInfo Image::AddAlphaChannel() {
-		for (uint32_t i = 0; i < m_width * m_height; i++) {
-			m_imageData.insert(m_imageData.begin() + (i * (m_bytesPerPixel + m_bytesPerPixel / 3)) + m_bytesPerPixel, m_bytesPerPixel / 3, 0xff);
+		for (uint32_t y = 0; y < m_height; y++) {
+			std::for_each(m_pixelData[y].begin(), m_pixelData[y].end(), [](Utils::Pixel& val) { val.A = UINT16_MAX; });
 		}
 
-		VkFormat imageFormat;
 		// Select new image format
-		switch (GetImageFormat()) {
+		VkFormat imageFormat;
+		switch (GetVulkanisedImageFormat()) {
 		case VK_FORMAT_R8G8B8_UNORM:
 			imageFormat = VK_FORMAT_R8G8B8A8_UNORM;
 			m_pixelFormat = Utils::RGBA8;

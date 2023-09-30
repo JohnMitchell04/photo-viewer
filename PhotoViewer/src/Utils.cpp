@@ -2,6 +2,34 @@
 
 namespace ImageLibrary {
 	namespace Utils {
+		int GetPixelFormatByteSize(PixelFormat pixelFormat) {
+			return GetChannelByteSize(pixelFormat) * (HasAlphaChannel(pixelFormat) ? 4 : 3);
+		}
+
+		int GetChannelByteSize(PixelFormat pixelFormat) {
+			switch (pixelFormat) {
+			case RGB8:
+				[[fallthrough]];
+			case RGBA8:
+				return 1;
+			case RGB16:
+				[[fallthrough]];
+			case RGBA16:
+				return 2;
+			}
+		}
+
+		bool HasAlphaChannel(PixelFormat pixelFormat) {
+			switch (pixelFormat) {
+			case RGBA8:
+				[[fallthrough]];
+			case RGBA16:
+				return true;
+			default:
+				return false;
+			}
+		}
+
 		namespace PNG {
 			ChunkIdentifier StringToFormat(std::string string) {
 				// Convert string specifier to know chunk enum
