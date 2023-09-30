@@ -24,6 +24,7 @@ namespace ImageLibrary {
 		void ParsePLTE(uint32_t length);
 		std::vector<uint8_t> DecompressData();
 		std::vector<uint8_t> UnfilterData(std::vector<uint8_t>& input);
+		std::vector<uint8_t> UnfilterScanline(std::vector<uint8_t>& scanline, std::vector<uint8_t> previousLine, uint8_t filterType);
 		std::vector<uint8_t> DeinterlaceData(std::vector<uint8_t>& input);
 		void ParsePixels(std::vector<uint8_t>& input);
 

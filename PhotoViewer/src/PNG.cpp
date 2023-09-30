@@ -37,7 +37,7 @@ namespace ImageLibrary {
 		std::vector<uint8_t> pixelData = DeinterlaceData(interlacedData);
 
 		// Parse pixels
-		ParsePixels(interlacedData);
+		ParsePixels(pixelData);
 	}
 
 	void PNG::ParseSignature() {
@@ -305,6 +305,79 @@ namespace ImageLibrary {
 
 	std::vector<uint8_t> PNG::UnfilterData(std::vector<uint8_t>& input) {
 		std::vector<uint8_t> output;
+		std::vector<uint8_t> unfilteredData;
+
+		if (m_interlaceMethod == 0) {
+			// Iterate through each scanline and unfliter appropriately
+			for (uint32_t y = 0; y < m_height; y++) {
+				// Get scanline filter type
+				uint8_t filterType = input[0];
+
+				// Consume byte
+				input.erase(input.begin());
+
+				// Extract scanline
+				uint32_t lineWidth = (m_bytesPerPixel == 1 ? (uint32_t)std::ceil(m_width * m_bitDepth / 8.0) : m_bytesPerPixel * m_width);
+				std::vector<uint8_t> scanline(input.begin(), input.begin() + lineWidth);
+
+				// Unfilter scanline
+				unfilteredData = UnfilterScanline(scanline, unfilteredData, filterType);
+				std::copy(unfilteredData.begin(), unfilteredData.end(), std::back_inserter(output));
+
+				// Consme data
+				input.erase(input.begin(), input.begin() + lineWidth);
+			}
+		}
+		else {
+			std::array<std::array<int, 4>, 7> passes = {{
+				{0, 0, 8, 8},
+				{4, 0, 8, 8},
+				{0, 4, 4, 8},
+				{2, 0, 4, 4},
+				{0, 2, 2, 4},
+				{1, 0, 2, 2},
+				{0, 1, 1, 2}
+			}};
+
+			for (int i = 0; i < 7; i++) {
+				std::array<int, 4> pass = passes[i];
+				int xStart = pass[0];
+				int yStart = pass[1];
+				int xStep = pass[2];
+				int yStep = pass[3];
+
+				if (xStart >= m_width) { continue; }
+
+				unfilteredData.clear();
+
+				int pixelsPerRow = (int)std::ceil((m_width - xStart) / (double)xStep);
+				int rowSize = std::ceil(pixelsPerRow * m_bitDepth / 8.0);
+
+				for (int y = yStart; y < m_height; y += yStep) {
+					// Extract filter type
+					int filterType = input[0];
+					input.erase(input.begin());
+
+					// Extract scanline
+					std::vector<uint8_t> scanline;
+					std::copy(input.begin(), input.begin() + rowSize, std::back_inserter(scanline));
+					input.erase(input.begin(), input.begin() + rowSize);
+
+					// Unfilter scanline
+					unfilteredData = UnfilterScanline(scanline, unfilteredData, filterType);
+					std::copy(unfilteredData.begin(), unfilteredData.end(), std::back_inserter(output));
+				}
+			}
+		}
+
+		// Shrink input to 0
+		input.shrink_to_fit();
+
+		return output;
+	}
+
+	std::vector<uint8_t> PNG::UnfilterScanline(std::vector<uint8_t>& scanline, std::vector<uint8_t> previousLine, uint8_t filterType) {
+		std::vector<uint8_t> output;
 
 		// Define paeth functor for use
 		auto paeth = [](uint8_t aByte, uint8_t bByte, uint8_t cByte) -> uint8_t {
@@ -321,76 +394,97 @@ namespace ImageLibrary {
 			return result;
 		};
 
-		// Iterate through each scanline and unfliter appropriately
-		for (uint32_t y = 0; y < m_height; y++) {
-			// Get scanline filter type
-			uint8_t filterType = input[0];
+		// TODO: Check performance impact of this for larger images
+		uint32_t lineWidth = scanline.size();
+		for (uint32_t x = 0; x < lineWidth; x++) {
+			uint8_t currentByte;
+
+			bool firstPixel = (std::floor(x / m_bytesPerPixel) == 0 ? true : false);
+			bool firstScanline = (previousLine.size() == 0 ? true : false);
+
+			uint8_t aByte = (firstPixel ? 0 : output[output.size() - m_bytesPerPixel]);
+			uint8_t bByte = (firstScanline ? 0 : previousLine[x]);
+			uint8_t cByte = (firstPixel || firstScanline ? 0 : previousLine[x - m_bytesPerPixel]);
+
+			switch (filterType) {
+				// None
+			case 0:
+				currentByte = scanline[0];
+				break;
+				// Sub
+			case 1:
+				// Can't get preceding byte if first pixel
+				currentByte = scanline[0] + aByte;
+				break;
+				// Up
+			case 2:
+				// Can't get up byte if first scanline
+				currentByte = scanline[0] + bByte;
+				break;
+				// Average
+			case 3:
+				currentByte = scanline[0] + (uint8_t)std::floor((aByte + bByte) / 2);
+				break;
+				// Paeth
+			case 4:
+				currentByte = scanline[0] + paeth(aByte, bByte, cByte);
+				break;
+				// Invalid filter type type
+			default:
+				throw new std::runtime_error("Error: Invalid filter type");
+				break;
+			}
+
+			// Add reconstructed byte to output
+			output.push_back(currentByte);
 
 			// Consume byte
-			input.erase(input.begin());
-
-			// TODO: Check performance impact of this for larger images
-			// Ensure loop executes correctly for sub byte size data
-			uint32_t lineWidth = (m_bytesPerPixel == 1 ? (uint32_t)std::round(m_width * m_bitDepth / 8.0) : m_bytesPerPixel * m_width);
-			for (uint32_t x = 0; x < lineWidth; x++) {
-				uint8_t currentByte;
-
-				bool firstPixel = (std::floor(x / m_bytesPerPixel) == 0 ? true : false);
-				bool firstScanline = (y == 0 ? true : false);
-
-				uint8_t aByte = (firstPixel ? 0 : output[output.size() - m_bytesPerPixel]);
-				uint8_t bByte = (firstScanline ? 0 : output[output.size() - lineWidth]);
-				uint8_t cByte = (firstPixel || firstScanline ? 0 : output[output.size() - lineWidth - m_bytesPerPixel]);
-
-				switch (filterType) {
-					// None
-				case 0:
-					currentByte = input[0];
-					break;
-					// Sub
-				case 1:
-					// Can't get preceding byte if first pixel
-					currentByte = input[0] + aByte;
-					break;
-					// Up
-				case 2:
-					// Can't get up byte if first scanline
-					currentByte = input[0] + bByte;
-					break;
-					// Average
-				case 3:
-					currentByte = input[0] + (uint8_t)std::floor((aByte + bByte) / 2);
-					break;
-					// Paeth
-				case 4:
-					currentByte = input[0] + paeth(aByte, bByte, cByte);
-					break;
-					// Invalid filter type type
-				default:
-					throw new std::runtime_error("Error: Invalid filter type");
-					break;
-				}
-
-				// Add reconstructed byte to output
-				output.push_back(currentByte);
-
-				// Consume byte
-				input.erase(input.begin());
-			}
+			scanline.erase(scanline.begin());
 		}
-
-		// Shrink input to 0
-		input.shrink_to_fit();
 
 		return output;
 	}
 
+	// TODO: Need to extract pixels before this for sub byte data
 	std::vector<uint8_t> PNG::DeinterlaceData(std::vector<uint8_t>& input) {
 		// If no interlacing has been done, simply return data
 		if (m_interlaceMethod == 0) { return input; }
 
-		// TODO: Implement Adam7 deinterlacing
-		return input;
+		std::vector<uint8_t> output(m_width * m_height * m_bytesPerPixel);
+
+		std::array<std::array<int, 4>, 7> passes = {{
+			{0, 0, 8, 8},
+			{4, 0, 8, 8},
+			{0, 4, 4, 8},
+			{2, 0, 4, 4},
+			{0, 2, 2, 4},
+			{1, 0, 2, 2},
+			{0, 1, 1, 2}
+		}};
+
+		for (int i = 0; i < 7; i++) {
+			std::array<int, 4> pass = passes[i];
+			int xStart = pass[0];
+			int yStart = pass[1];
+			int xStep = pass[2];
+			int yStep = pass[3];
+
+			int pixelsPerRow = std::ceil((m_width - xStart) / (double)xStep);
+
+			for (int y = yStart; y < m_height; y += yStep) {
+				int rowOffset = y * (m_width * m_bytesPerPixel) + xStart * m_bytesPerPixel;
+				int skip = m_bytesPerPixel * xStep;
+
+				for (int j = 0; j < pixelsPerRow; j++) {
+					for (int k = 0; k < m_bytesPerPixel; k++) {
+						output[rowOffset + j * skip] = input[0];
+						input.erase(input.begin());
+					}
+				}
+			}
+		}
+
+		return output;
 	}
 
 	void PNG::ParsePixels(std::vector<uint8_t>& input) {
@@ -418,6 +512,7 @@ namespace ImageLibrary {
 			break;
 		}
 
+		// TODO: Multi byte colour data doesn't appears to have visual issues
 		// Get number of bytes per channel so data can be copied correctly
 		int channelSize = Utils::GetChannelByteSize(m_pixelFormat);
 		for (uint32_t i = 0; i < m_width * m_height; i++) {
