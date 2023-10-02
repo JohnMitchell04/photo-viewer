@@ -1,6 +1,8 @@
-# Walnut App Template
+# This Repsoitory
+This is an image viewer I built to gain a greater understanding of C++ it is built using [Walnut](https://github.com/StudioCherno/Walnut) which is an application framework around [Dear ImGui](https://github.com/ocornut/imgui). Currently only support for the [PNG](https://www.w3.org/TR/png-3/#) specification is supported but support for JPEG and other common formats is planned. Additionally support for some basic image editing functionality is planned.
 
-This is a simple app template for [Walnut](https://github.com/TheCherno/Walnut) - unlike the example within the Walnut repository, this keeps Walnut as an external submodule and is much more sensible for actually building applications. See the [Walnut](https://github.com/TheCherno/Walnut) repository for more details.
+# References
+This project was devloped making reference to Vulkan code developed by Yan Chernovik in [Walnut](https://github.com/StudioCherno/Walnut), understanding of the format was taken from [the specification](https://www.w3.org/TR/png-3/#) and implementation of Adam7 interlacing was helped by reference to the javascript [TNG](https://github.com/chjj/tng/tree/master) library.
 
-## Getting Started
-Once you've cloned, you can customize the `premake5.lua` and `WalnutApp/premake5.lua` files to your liking (eg. change the name from "WalnutApp" to something else).  Once you're happy, run `scripts/Setup.bat` to generate Visual Studio 2022 solution/project files. Your app is located in the `WalnutApp/` directory, which some basic example code to get you going in `WalnutApp/src/WalnutApp.cpp`. I recommend modifying that WalnutApp project to create your own application, as everything should be setup and ready to go.
+# Build
+Run the `setup.bat` file in the scripts folder and a VS22 sln file will be created for the project that can be ran.
