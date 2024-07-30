@@ -33,8 +33,11 @@ namespace ImageLibrary {
 		// Unfilter the IDAT image data
 		std::vector<uint8_t> interlacedData = UnfilterData(filteredData);
 
+		// Unpack pixels from sub-byte data
+		std::vector<uint8_t> unpackedData = UnpackData(interlacedData);
+
 		// Deinterlace IDAT image data if interlacing was used
-		std::vector<uint8_t> pixelData = DeinterlaceData(interlacedData);
+		std::vector<uint8_t> pixelData = DeinterlaceData(unpackedData);
 
 		// Parse pixels
 		ParsePixels(pixelData);
@@ -317,7 +320,7 @@ namespace ImageLibrary {
 				input.erase(input.begin());
 
 				// Extract scanline
-				uint32_t lineWidth = (m_bytesPerPixel == 1 ? (uint32_t)std::ceil(m_width * m_bitDepth / 8.0) : m_bytesPerPixel * m_width);
+				uint32_t lineWidth = (m_bitDepth <= 8 ? (uint32_t)std::ceil(m_width * m_bitDepth / 8.0) : m_bytesPerPixel * m_width);
 				std::vector<uint8_t> scanline(input.begin(), input.begin() + lineWidth);
 
 				// Unfilter scanline
@@ -329,6 +332,7 @@ namespace ImageLibrary {
 			}
 		}
 		else {
+			// Information about where pixels are on each pass
 			std::array<std::array<int, 4>, 7> passes = {{
 				{0, 0, 8, 8},
 				{4, 0, 8, 8},
@@ -339,7 +343,9 @@ namespace ImageLibrary {
 				{0, 1, 1, 2}
 			}};
 
+			// Iterate over the image for each pass and unfilter scanlines appropriately
 			for (int i = 0; i < 7; i++) {
+				// Initialise pass data
 				std::array<int, 4> pass = passes[i];
 				int xStart = pass[0];
 				int yStart = pass[1];
@@ -351,8 +357,9 @@ namespace ImageLibrary {
 				unfilteredData.clear();
 
 				int pixelsPerRow = (int)std::ceil((m_width - xStart) / (double)xStep);
-				int rowSize = std::ceil(pixelsPerRow * m_bitDepth / 8.0);
+				int rowSize = (m_bitDepth <= 8 ? (uint32_t)std::ceil(pixelsPerRow * m_bitDepth / 8.0) : pixelsPerRow * m_bytesPerPixel);
 
+				// Iterate over each scanline in the pass
 				for (int y = yStart; y < m_height; y += yStep) {
 					// Extract filter type
 					int filterType = input[0];
@@ -442,16 +449,95 @@ namespace ImageLibrary {
 			scanline.erase(scanline.begin());
 		}
 
+		// Shrink scanline to 0
+		scanline.shrink_to_fit();
+
 		return output;
 	}
 
-	// TODO: Need to extract pixels before this for sub byte data
+	std::vector<uint8_t> PNG::UnpackData(std::vector<uint8_t>& input) {
+		if (m_bitDepth >= 8) { return input; }
+
+		std::vector<uint8_t> output;
+
+		// Create functor for extracting value
+		auto extractValue = [bitDepth = m_bitDepth, &input, &output](int i) -> void {
+			// Construct mask
+			uint8_t mask = 0;
+			for (int j = 0; j < bitDepth; j++) {
+				mask |= 128 >> j;
+			}
+
+			// Extract value
+			uint8_t value = (mask & input[0]) >> (8 - bitDepth);
+
+			// Add value
+			output.push_back(value);
+
+			// Shift value for next extraction
+			input[0] <<= bitDepth;
+
+			// Erase value if needed
+			if ((i * bitDepth) % 8 == 0 && i != 0) {
+				input.erase(input.begin());
+			}
+		};
+
+		// The data is not perfectly packed into bytes due to how scanlines are filtered
+		// Information about where pixels are on each pass
+		std::array<std::array<int, 4>, 7> passes = { {
+			{0, 0, 8, 8},
+			{4, 0, 8, 8},
+			{0, 4, 4, 8},
+			{2, 0, 4, 4},
+			{0, 2, 2, 4},
+			{1, 0, 2, 2},
+			{0, 1, 1, 2}
+		} };
+
+		
+		if (m_interlaceMethod == 1) {
+			// Iterate over the image for each pass and unfilter scanlines appropriately
+			for (int i = 0; i < 7; i++) {
+				// Initialise pass data
+				std::array<int, 4> pass = passes[i];
+				int xStart = pass[0];
+				int yStart = pass[1];
+				int xStep = pass[2];
+				int yStep = pass[3];
+
+				if (xStart >= m_width) { continue; }
+
+				int pixelsPerRow = (int)std::ceil((m_width - xStart) / (double)xStep);
+				int rowSize = (m_bitDepth <= 8 ? (uint32_t)std::ceil(pixelsPerRow * m_bitDepth / 8.0) : pixelsPerRow * m_bytesPerPixel);
+
+				int rowsPerPass = (int)std::ceil((m_height - yStart) / (double)yStep);
+
+				for (int j = 0; j < rowsPerPass; j++) {
+					for (int k = 0; k < pixelsPerRow; k++) {
+						extractValue(k);
+					}
+
+					if ((m_bitDepth * pixelsPerRow) % 8 != 0) { input.erase(input.begin()); }
+				}
+			}
+		}
+		else {
+			for (uint32_t i = 0; i < m_width * m_height; i++) { extractValue(i); }
+		}
+
+		// Shrink input to 0
+		input.shrink_to_fit();
+
+		return output;
+	}
+
 	std::vector<uint8_t> PNG::DeinterlaceData(std::vector<uint8_t>& input) {
 		// If no interlacing has been done, simply return data
 		if (m_interlaceMethod == 0) { return input; }
 
+		// Initialise output data and pass information
 		std::vector<uint8_t> output(m_width * m_height * m_bytesPerPixel);
-
 		std::array<std::array<int, 4>, 7> passes = {{
 			{0, 0, 8, 8},
 			{4, 0, 8, 8},
@@ -462,7 +548,9 @@ namespace ImageLibrary {
 			{0, 1, 1, 2}
 		}};
 
+		// Iterate over the image for each pass and deinterlace scanlines appropriately
 		for (int i = 0; i < 7; i++) {
+			// Initialise pass data
 			std::array<int, 4> pass = passes[i];
 			int xStart = pass[0];
 			int yStart = pass[1];
@@ -471,18 +559,24 @@ namespace ImageLibrary {
 
 			int pixelsPerRow = std::ceil((m_width - xStart) / (double)xStep);
 
+			// Iterate over each scanline in the pass
 			for (int y = yStart; y < m_height; y += yStep) {
+				// Calculate where in the output image this pixel will appear
 				int rowOffset = y * (m_width * m_bytesPerPixel) + xStart * m_bytesPerPixel;
 				int skip = m_bytesPerPixel * xStep;
 
+				// Iterate over pixels in scanline, copy into output image and consume them
 				for (int j = 0; j < pixelsPerRow; j++) {
 					for (int k = 0; k < m_bytesPerPixel; k++) {
-						output[rowOffset + j * skip] = input[0];
+						output[rowOffset + (j * skip) + k] = input[0];
 						input.erase(input.begin());
 					}
 				}
 			}
 		}
+
+		// Shrink input to 0
+		input.shrink_to_fit();
 
 		return output;
 	}
@@ -512,7 +606,6 @@ namespace ImageLibrary {
 			break;
 		}
 
-		// TODO: Multi byte colour data doesn't appears to have visual issues
 		// Get number of bytes per channel so data can be copied correctly
 		int channelSize = Utils::GetChannelByteSize(m_pixelFormat);
 		for (uint32_t i = 0; i < m_width * m_height; i++) {
@@ -539,56 +632,27 @@ namespace ImageLibrary {
 				break;
 				// Indexed colour
 			case 3: {
-				// Construct mask
-				uint8_t mask = 0;
-				for (int i = 0; i < m_bitDepth; i++) {
-					mask |= 128 >> i;
-				}
+				// Select pixel from index
+				pixel = m_PLTEData[input[0]];
 
-				// Extract index
-				uint8_t index = (mask & input[0]) >> (8 - m_bitDepth);
-
-				// Select pixel
-				pixel = m_PLTEData[index];
-
-				// Shift value for next extraction
-				input[0] <<= m_bitDepth;
-
-				// Erase value if needed
-				if ((i * m_bitDepth) % 8 == 0 && i != 0) {
-					input.erase(input.begin());
-				}
+				// Erase index
+				input.erase(input.begin());
 				break;
 			}
 				// Greyscale
 			case 0:
 				if (m_bitDepth < 8) {
-					int maxVal = (int)std::pow(2, m_bitDepth) - 1;
-
-					// Construct mask
-					uint8_t mask = 0;
-					for (int i = 0; i < m_bitDepth; i++) {
-						mask |= 128 >> i;
-					}
-
-					// Extract value
-					uint8_t value = (mask & input[0]) >> (8 - m_bitDepth);
-
 					// Normalise value
-					value = (uint8_t)std::round(((double)value / maxVal) * UINT8_MAX);
+					int maxVal = (int)std::pow(2, m_bitDepth) - 1;
+					uint8_t value = (uint8_t)std::round(((double)input[0] / maxVal) * UINT8_MAX);
 
 					// Assign components
 					pixel.R = value;
 					pixel.G = value;
 					pixel.B = value;
 
-					// Shift value for next extraction
-					input[0] <<= m_bitDepth;
-
-					// Erase value if needed
-					if ((i * m_bitDepth) % 8 == 0 && i != 0) {
-						input.erase(input.begin());
-					}
+					// Erase value
+					input.erase(input.begin());
 					break;
 				}
 				else { [[fallthrough]]; }
